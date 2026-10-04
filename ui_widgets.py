@@ -11,6 +11,49 @@ from typing import Any
 from ui_theme import UITheme, _on_color
 
 
+def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
+                        on_accept=None, on_later=None) -> tuple:
+    """Fill *parent* (a frame) with the in-UI update offer. Returns its buttons.
+
+    Lives here rather than on the app because it is widget construction with no
+    app state in it: given a parent and a palette it makes a row of label and
+    two buttons, and hands the caller the widgets so it can wire the commands
+    and restyle them however the rest of the app does.
+
+    Why a banner and not a modal: an "update available" dialog interrupts
+    whatever the user was doing to ask a question they did not raise, and the
+    answer only mattered because the question was a button. Inline, the same
+    choice waits without blocking - someone mid-download can finish first.
+
+    The install caveat that used to live in the dialog text is kept here,
+    because it is the part that actually changes someone's decision: Windows
+    shows a UAC prompt and the app relaunches itself.
+    """
+    body = ctk.CTkFrame(parent, fg_color="transparent")
+    accent = palette.get("accent", UITheme.COLOR_PRIMARY)
+
+    ctk.CTkLabel(body, text="↑", font=UITheme.F(14, "bold"),
+                 text_color=accent, width=18).pack(side="left", padx=(0, 6))
+
+    ctk.CTkLabel(
+        body,
+        text=f"Update available: {local_ver} → {remote_ver}. Installing "
+             f"closes the app and relaunches it, and Windows will ask "
+             f"for admin.",
+        font=UITheme.F(11), anchor="w", justify="left",
+        text_color=palette.get("text", "#ecf0f1"),
+    ).pack(side="left", fill="x", expand=True)
+
+    later = ctk.CTkButton(body, text="Later", width=70,
+                          command=on_later or (lambda: None))
+    later.pack(side="right", padx=(8, 0))
+
+    now = ctk.CTkButton(body, text="Update now", width=110,
+                        command=on_accept or (lambda: None))
+    now.pack(side="right")
+    return now, later
+
+
 def hide_scrollbar_until_hover(bar, fill: str, handle: str, accent: str) -> None:
     """Keep a CTkScrollbar invisible until the pointer goes near it.
 

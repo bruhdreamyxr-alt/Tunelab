@@ -96,6 +96,27 @@ def _on_color(bg: str, *candidates: str) -> str:
     return best
 
 
+def _sb_row_state(pal, fill, edge, bw, icon_c, label_c, base):
+    """Everything a nav row's paint depends on, as one comparable value.
+
+    A rail repaint reconfigures every row, and CustomTkinter's
+    CTkFrame.configure(fg_color=...) is not cheap: it cascades a bg_color down
+    to every child label and forces a full canvas redraw, so re-painting a row
+    that is already correct still costs real frames. _repaint_nav_rows runs on
+    every hover change and every page switch, and usually only one row actually
+    changed - so each row remembers this tuple and is skipped when the answer
+    is unchanged. That is the difference between a rail that repaints in
+    microseconds and one that drops frames.
+
+    The palette is keyed by identity, not by value: a theme switch swaps in a
+    different dict, so identity catches it without re-hashing every colour, and
+    two themes with equal colours are free to skip. The ring is included because
+    it is derived from these inputs - a row whose edge changed repaints even
+    though nothing visible about the chip moved.
+    """
+    return (id(pal), fill, _ring_color(edge, fill, base), bw, icon_c, label_c)
+
+
 def _mix(a: str, b: str, t: float) -> str:
     """Blend two '#rrggbb' colors; ``t``=0 keeps ``a``, ``t``=1 gives ``b``.
 

@@ -115,6 +115,7 @@ from ui_theme import (  # noqa: F401  (re-exported)
     _rel_luminance,
     _render_icon_image,
     _ring_color,
+    _sb_row_state,
     _split_headline,
     _TRACEBACK_MARKERS,
     _UI_FONT_FAMILY,
@@ -125,7 +126,11 @@ from ui_theme import (  # noqa: F401  (re-exported)
 
 # The queue's themed row container also moved out; imported (not aliased) so
 # ui._QueueRowList is this exact class and the existing call site is unchanged.
-from ui_widgets import _QueueRowList, hide_scrollbar_until_hover  # noqa: E402
+from ui_widgets import (  # noqa: E402  (after the ctk import)
+    _QueueRowList,
+    build_update_banner,
+    hide_scrollbar_until_hover,
+)
 
 class UniversalAudioStudio(ctk.CTk):
     # -----------------
@@ -2743,60 +2748,29 @@ class UniversalAudioStudio(ctk.CTk):
                             on_accept=None) -> None:
         """Offer an available update inline instead of in a modal dialog.
 
-        Shows what a yes/no dialog would have: the current and new versions,
-        and the one thing that matters about the install (Windows will ask for
-        admin, and the app relaunches itself). The difference is that it does
-        not block. Someone mid-download can finish, and dismissing it is just
-        the Later button rather than "No".
-
-        Never stacks: a second update found while the first is up refreshes the
-        text in place.
+        The widgets are built by ui_widgets.build_update_banner; this only
+        decides when they exist. Never stacks: a second update found while the
+        first is up refreshes the text in place rather than adding a row.
         """
         try:
-            pal = getattr(self, "_palette", {}) or {}
-            accent = pal.get("accent", UITheme.COLOR_PRIMARY)
-            on_accent = _on_color(accent, pal.get("text", "#ffffff"),
-                                  pal.get("bg", "#1e1e24"))
-
             banner = self._update_banner
             for child in banner.winfo_children():
                 child.destroy()
 
-            body = ctk.CTkFrame(banner, fg_color="transparent")
-            body.pack(fill="x", padx=12, pady=(0, 4))
-
-            mark = ctk.CTkLabel(body, text="\u2191", font=UITheme.F(14, "bold"),
-                                text_color=accent, width=18)
-            mark.pack(side="left", padx=(0, 6))
-
-            text = ctk.CTkLabel(
-                body,
-                text=f"Update available: {local_ver} \u2192 {remote_ver}. "
-                     f"Installing closes the app and relaunches it, and Windows "
-                     f"will ask for admin.",
-                font=UITheme.F(11), anchor="w", justify="left",
-                text_color=pal.get("text", "#ecf0f1"),
-            )
-            text.pack(side="left", fill="x", expand=True)
-
             def _later():
                 self._hide_update_banner()
                 self.show_toast("Update reminder dismissed.", "info", 2500)
-
-            later_btn = ctk.CTkButton(body, text="Later", width=70,
-                                      command=_later)
-            later_btn.pack(side="right", padx=(8, 0))
 
             def _accept():
                 self._hide_update_banner()
                 if on_accept is not None:
                     on_accept()
 
-            now_btn = ctk.CTkButton(body, text="Update now", width=110,
-                                    command=_accept)
-            now_btn.pack(side="right")
-            self._style_button(now_btn, "primary", bordered=True)
-            self._style_button(later_btn, "secondary", bordered=True)
+            now, later = build_update_banner(
+                banner, getattr(self, "_palette", {}) or {},
+                local_ver, remote_ver, on_accept=_accept, on_later=_later)
+            self._style_button(now, "primary", bordered=True)
+            self._style_button(later, "secondary", bordered=True)
 
             banner.pack(fill="x", padx=12, pady=(8, 0), before=self.content_frame)
             self._update_banner_set = True
@@ -4481,6 +4455,13 @@ class UniversalAudioStudio(ctk.CTk):
         hover = getattr(self, '_sb_hover', None)
         press = getattr(self, '_sb_press', None)
 
+        # Unchanged rows are skipped: see _sb_row_state in ui_theme.py for why
+        # re-configuring an already-correct row costs real frames.
+        painted = getattr(self, '_sb_painted', None)
+        if painted is None:
+            painted = {}
+            self._sb_painted = painted
+
         for name, row in getattr(self, 'nav_buttons', {}).items():
             is_active = name == active
             # A row holding keyboard focus is ringed like the selected one. It
@@ -4501,6 +4482,10 @@ class UniversalAudioStudio(ctk.CTk):
                 fill, icon_c, label_c = press_fill, accent, text_c
             elif name == hover:
                 fill, icon_c, label_c = hover_fill, accent, text_c
+            state = _sb_row_state(pal, fill, edge, bw, icon_c, label_c, base)
+            if painted.get(name) == state:
+                continue
+            painted[name] = state
             try:
                 row.configure(fg_color=fill, border_width=bw,
                               border_color=_ring_color(edge, fill, base))
