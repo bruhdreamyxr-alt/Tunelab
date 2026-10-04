@@ -125,7 +125,7 @@ from ui_theme import (  # noqa: F401  (re-exported)
 
 # The queue's themed row container also moved out; imported (not aliased) so
 # ui._QueueRowList is this exact class and the existing call site is unchanged.
-from ui_widgets import _QueueRowList  # noqa: E402  (after the ctk import)
+from ui_widgets import _QueueRowList, hide_scrollbar_until_hover  # noqa: E402
 
 class UniversalAudioStudio(ctk.CTk):
     # -----------------
@@ -575,6 +575,17 @@ class UniversalAudioStudio(ctk.CTk):
             anchor="w",
         )
         self.title_lbl.pack(side="left")
+
+        # Update banner. Created here, before the content area is packed, so it
+        # sits between the header and the pages rather than being appended
+        # after them - pack order decides the layout, so a banner built on
+        # demand later would land under the content instead of above it.
+        #
+        # This replaces a modal "Update Available" yes/no dialog. A modal for
+        # something the user did not ask about interrupts whatever they were
+        # doing, and the answer only mattered because the question was a
+        # button: the banner carries the same choice inline and waits.
+        self._update_banner = ctk.CTkFrame(self.main_container, fg_color="transparent")
 
         # Central content area. This one deliberately stays a transparent
         # hole: a filled frame here would paint its own square canvas over the
@@ -2714,6 +2725,84 @@ class UniversalAudioStudio(ctk.CTk):
         threading.Thread(target=_runner, daemon=True).start()
 
 
+    def _hide_update_banner(self) -> None:
+        """Take the update banner down, if it is up.
+
+        pack_forget rather than destroy: the startup check runs once a day but
+        the Performance page can also offer an update, and rebuilding the
+        widgets each time is work for no gain. The frame itself is permanent,
+        so hiding it is one call.
+        """
+        try:
+            self._update_banner.pack_forget()
+            self._update_banner_set = False
+        except Exception:
+            logger.debug("Could not hide the update banner", exc_info=True)
+
+    def _show_update_banner(self, local_ver: str, remote_ver: str,
+                            on_accept=None) -> None:
+        """Offer an available update inline instead of in a modal dialog.
+
+        Shows what a yes/no dialog would have: the current and new versions,
+        and the one thing that matters about the install (Windows will ask for
+        admin, and the app relaunches itself). The difference is that it does
+        not block. Someone mid-download can finish, and dismissing it is just
+        the Later button rather than "No".
+
+        Never stacks: a second update found while the first is up refreshes the
+        text in place.
+        """
+        try:
+            pal = getattr(self, "_palette", {}) or {}
+            accent = pal.get("accent", UITheme.COLOR_PRIMARY)
+            on_accent = _on_color(accent, pal.get("text", "#ffffff"),
+                                  pal.get("bg", "#1e1e24"))
+
+            banner = self._update_banner
+            for child in banner.winfo_children():
+                child.destroy()
+
+            body = ctk.CTkFrame(banner, fg_color="transparent")
+            body.pack(fill="x", padx=12, pady=(0, 4))
+
+            mark = ctk.CTkLabel(body, text="\u2191", font=UITheme.F(14, "bold"),
+                                text_color=accent, width=18)
+            mark.pack(side="left", padx=(0, 6))
+
+            text = ctk.CTkLabel(
+                body,
+                text=f"Update available: {local_ver} \u2192 {remote_ver}. "
+                     f"Installing closes the app and relaunches it, and Windows "
+                     f"will ask for admin.",
+                font=UITheme.F(11), anchor="w", justify="left",
+                text_color=pal.get("text", "#ecf0f1"),
+            )
+            text.pack(side="left", fill="x", expand=True)
+
+            def _later():
+                self._hide_update_banner()
+                self.show_toast("Update reminder dismissed.", "info", 2500)
+
+            later_btn = ctk.CTkButton(body, text="Later", width=70,
+                                      command=_later)
+            later_btn.pack(side="right", padx=(8, 0))
+
+            def _accept():
+                self._hide_update_banner()
+                if on_accept is not None:
+                    on_accept()
+
+            now_btn = ctk.CTkButton(body, text="Update now", width=110,
+                                    command=_accept)
+            now_btn.pack(side="right")
+            self._style_button(now_btn, "primary", bordered=True)
+            self._style_button(later_btn, "secondary", bordered=True)
+
+            banner.pack(fill="x", padx=12, pady=(8, 0), before=self.content_frame)
+            self._update_banner_set = True
+        except Exception:
+            logger.debug("Could not show the update banner", exc_info=True)
+
     def _offer_startup_update(self, local_ver, release):
         """Show the 'update available' prompt found by the startup check."""
         import updater  # local module
@@ -2731,22 +2820,11 @@ class UniversalAudioStudio(ctk.CTk):
             self._offer_macos_download(local_ver, release)
             return
 
-        msg = (
-            f"A new version is available:\n\n"
-            f"  Current: {local_ver}\n"
-            f"  Latest:  {remote_ver}\n\n"
-            f"Do you want to download and install it now?\n"
-            f"The app will close automatically when the update is ready.\n\n"
-            f"Because this app is installed under 'C:\\Program Files', "
-            f"Windows will show an admin (UAC) prompt when installing. "
-            f"Click Yes, and the app will update and relaunch automatically."
-        )
-        if messagebox.askyesno("Update Available", msg):
-            # Reuse the full manual update flow (download + elevated install + relaunch).
-            try:
-                self.check_for_app_updates()
-            except Exception:
-                pass
+        # Non-blocking: the banner states the same thing the modal did, minus
+        # the interruption. The install note that mattered ("Windows will ask
+        # for admin, the app relaunches") is in the banner text now.
+        self._show_update_banner(local_ver, remote_ver,
+                                 on_accept=self.check_for_app_updates)
 
 
     def _do_self_restart(self):
@@ -5469,8 +5547,7 @@ class UniversalAudioStudio(ctk.CTk):
                     tk.Frame.configure(widget, bg=fill)
                     bar = getattr(widget, "_scrollbar", None)
                     if bar is not None:
-                        bar.configure(fg_color=trough, button_color=handle,
-                                      button_hover_color=accent)
+                        hide_scrollbar_until_hover(bar, fill, handle, accent)
                     done += 1
                 elif isinstance(widget, ctk.CTkOptionMenu):
                     dropdown = getattr(widget, "_dropdown_menu", None)

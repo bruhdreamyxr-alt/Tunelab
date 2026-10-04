@@ -859,12 +859,17 @@ class MessageboxRetirementTests(unittest.TestCase):
         self.assertEqual(self.SHOW_CALLS.findall(_source()), ["showerror"])
 
     def test_confirmations_are_still_synchronous(self):
-        # 7: queue remove/cancel/clear, Clear History, the cache clear, and
+        # 6: queue remove/cancel/clear, Clear History, the cache clear, and
         # Remove Missing Files (history). The exact number is a tripwire - a
         # confirmation dialog appearing or disappearing unnoticed is how a
         # destructive action ends up with no prompt, so a new one means updating
         # this count deliberately rather than by accident.
-        self.assertEqual(len(self.ASK_CALLS.findall(_source())), 7)
+        #
+        # It was 7 until the update notice became an in-UI banner. That one was
+        # never a destructive-action confirmation - it asked whether to install
+        # an update, which is a choice, not a guard - so dropping it here is the
+        # point of the change and not a lost prompt.
+        self.assertEqual(len(self.ASK_CALLS.findall(_source())), 6)
 
     def test_worker_thread_dialogs_are_marshalled(self):
         # A Toplevel built on a worker thread is a Tk threading crash, so the
@@ -2778,6 +2783,150 @@ class DeferredExceptionBindingTests(unittest.TestCase):
         self.assertIn('"Update Error", "Failed to update yt-dlp.", detail=err_text',
                       src)
         self.assertIn('_show_error_dialog("Cache Clear Error", err_text)', src)
+
+
+def _new_app():
+    """A real window. Both new suites drive actual widgets, not source."""
+    app = ui.UniversalAudioStudio()
+    app.update_idletasks()
+    app.update()
+    return app
+
+
+class ScrollbarVisibilityTests(unittest.TestCase):
+    """Scrollbars are invisible until the pointer reaches them."""
+
+    @requires_ctk
+    def setUp(self):
+        self.app = _new_app()
+        self.addCleanup(self._destroy)
+        self.frame, self.bar, self.canvas = self._first_well("settings")
+
+    def _destroy(self):
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def _first_well(self, page):
+        self.app.show_frame(page)
+        self.app.update_idletasks()
+        self.app.update()
+        for w in self.app._iter_widgets(self.app._page_frames[page]):
+            if isinstance(w, ctk.CTkScrollableFrame):
+                return w, w._scrollbar, w._parent_canvas
+        self.fail("%s has no scroll well" % page)
+
+    @requires_ctk
+    def test_the_bar_is_painted_in_the_well_fill_so_it_is_invisible(self):
+        fill = self.canvas.cget("bg")
+        self.assertEqual(self.bar.cget("button_color"), fill)
+        self.assertEqual(self.bar.cget("fg_color"), fill)
+
+    @requires_ctk
+    def test_the_handle_appears_on_enter_and_leaves_again(self):
+        fill = self.canvas.cget("bg")
+        canvas = self.bar._canvas
+        canvas.event_generate("<Enter>", x=2, y=10)
+        self.app.update()
+        self.assertNotEqual(self.bar.cget("button_color"), fill)
+        canvas.event_generate("<Leave>", x=2, y=10)
+        self.app.update()
+        self.assertEqual(self.bar.cget("button_color"), fill)
+
+    @requires_ctk
+    def test_it_still_scrolls_while_invisible(self):
+        """The point of hiding it: nothing is unbound or resized."""
+        self.assertNotEqual(self.canvas.yview(), (0.0, 1.0),
+                            "the test needs overflowing content")
+        before = self.canvas.yview()
+
+        class Event:
+            widget = self.canvas
+            delta = -120
+            num = 0
+
+        self.frame._mouse_wheel_all(Event())
+        self.app.update()
+        self.assertNotEqual(self.canvas.yview(), before)
+
+    @requires_ctk
+    def test_repainting_the_theme_does_not_stack_hover_handlers(self):
+        """A repaint re-runs the styling; the bindings must not multiply."""
+        first = len(self.bar._canvas.bind("<Enter>"))
+        self.app._style_composites()
+        self.app._style_composites()
+        self.app.update()
+        self.assertEqual(len(self.bar._canvas.bind("<Enter>")), first)
+
+
+class UpdateBannerTests(unittest.TestCase):
+    """The update notice is inline and non-blocking, not a modal dialog."""
+
+    @requires_ctk
+    def setUp(self):
+        self.app = _new_app()
+        self.addCleanup(self._destroy)
+
+    def _destroy(self):
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def _buttons(self):
+        banner = self.app._update_banner
+        return {c.cget("text"): c
+                for w in banner.winfo_children()
+                for c in w.winfo_children()
+                if isinstance(c, ctk.CTkButton)}
+
+    @requires_ctk
+    def test_it_starts_hidden(self):
+        self.assertFalse(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_showing_it_offers_both_answers_inline(self):
+        self.app._show_update_banner("2.5.0", "2.6.0")
+        self.app.update_idletasks()
+        self.assertTrue(self.app._update_banner.winfo_manager())
+        self.assertEqual(set(self._buttons()), {"Update now", "Later"})
+
+    @requires_ctk
+    def test_update_now_runs_the_callback_and_gets_out_of_the_way(self):
+        fired = []
+        self.app._show_update_banner("2.5.0", "2.6.0",
+                                    on_accept=lambda: fired.append(1))
+        self.app.update_idletasks()
+        self._buttons()["Update now"].invoke()
+        self.app.update()
+        self.assertEqual(fired, [1])
+        self.assertFalse(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_later_dismisses_without_installing(self):
+        fired = []
+        self.app._show_update_banner("2.5.0", "2.6.0",
+                                    on_accept=lambda: fired.append(1))
+        self.app.update_idletasks()
+        self._buttons()["Later"].invoke()
+        self.app.update()
+        self.assertEqual(fired, [], "Later must not start the install")
+        self.assertFalse(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_a_second_offer_refreshes_instead_of_stacking(self):
+        for _ in range(3):
+            self.app._show_update_banner("2.5.0", "2.6.0")
+            self.app.update_idletasks()
+        self.assertEqual(len(self._buttons()), 2)
+
+    def test_the_startup_offer_no_longer_opens_a_modal(self):
+        """The whole point: nothing blocks the user out of the app."""
+        self.assertNotIn("messagebox.askyesno", _method_source(
+            "_offer_startup_update"))
+        self.assertIn("_show_update_banner", _method_source(
+            "_offer_startup_update"))
 
 
 if __name__ == "__main__":

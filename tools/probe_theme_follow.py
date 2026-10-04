@@ -121,12 +121,41 @@ def main() -> int:
         if got != want:
             failures.append(f"{name}: scroll well is {got} (was {before.get(name)}), "
                             f"expected {want}")
-        new_bar = _rgb(bar.cget("button_color")) if bar is not None else None
-        if new_bar != want_handle:
-            failures.append(f"{name}: scrollbar handle is {new_bar}, "
-                            f"palette sub is {want_handle}")
-        elif bars_before.get(name) == new_bar:
-            failures.append(f"{name}: scrollbar handle did not follow the palette")
+        # The bar is painted in the well's own fill until the pointer reaches
+        # it, so "does it still scroll" is a hover question, not a resting one.
+        # Check the resting state (invisible) and the hovered state (real
+        # handle) separately - asserting the handle at rest is what would have
+        # made this probe report the hiding as a regression.
+        resting = _rgb(bar.cget("button_color")) if bar is not None else None
+        if resting != got:
+            failures.append(f"{name}: hidden scrollbar is {resting}, but the "
+                            f"well is {got} - it would be visible at rest")
+        elif bars_before.get(name) == got:
+            failures.append(f"{name}: the scroll well did not change with the "
+                            f"palette, so a hidden bar cannot re-hide")
+
+        if bar is not None:
+            # Call the handlers directly rather than generating <Enter>: this
+            # probe runs the window withdrawn, where Tk delivers no events at
+            # all, so a synthesised one would silently assert nothing.
+            handlers = getattr(bar, "_sb_hover_handlers", None)
+            if handlers is None:
+                failures.append(f"{name}: scrollbar has no hover handling, so it "
+                                f"can never be seen")
+            else:
+                enter, leave = handlers
+                enter()
+                app.update_idletasks()
+                hovered = _rgb(bar.cget("button_color"))
+                if hovered != want_handle:
+                    failures.append(f"{name}: hovered scrollbar handle is {hovered}, "
+                                    f"palette sub is {want_handle}")
+                elif hovered == got:
+                    failures.append(f"{name}: the scrollbar handle never appears")
+                leave()
+                app.update_idletasks()
+                if _rgb(bar.cget("button_color")) != got:
+                    failures.append(f"{name}: scrollbar did not hide again on leave")
 
     for menu, drop in dropdowns(app):
         got = _rgb(drop.cget("fg_color"))

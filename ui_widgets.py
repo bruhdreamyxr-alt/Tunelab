@@ -11,6 +11,56 @@ from typing import Any
 from ui_theme import UITheme, _on_color
 
 
+def hide_scrollbar_until_hover(bar, fill: str, handle: str, accent: str) -> None:
+    """Keep a CTkScrollbar invisible until the pointer goes near it.
+
+    A permanently drawn scrollbar is visual noise on a themed window: the
+    handle is a palette-derived grey that reads as a stray artifact against
+    the well, and it sits there permanently even when the content barely
+    overflows. Wheel scrolling never needed it - CustomTkinter binds that to
+    the canvas - so the bar is only ever an affordance for dragging.
+
+    So it is painted in the well's own fill (invisible) and the real handle
+    appears when the pointer enters it. Nothing is unbound and no geometry
+    changes: the widget keeps its grid cell and all its bindings, so it still
+    scrolls while invisible - only the pixels are withheld.
+
+    The colours are cached on the bar so a later theme repaint refreshes them
+    rather than stacking a second pair of Enter/Leave handlers. Lives here
+    rather than on the app because it is widget styling with no app state in it.
+    """
+    try:
+        bar.configure(fg_color=fill, button_color=fill,
+                      button_hover_color=fill)
+        setattr(bar, "_sb_fill", fill)
+        setattr(bar, "_sb_handle", handle)
+        setattr(bar, "_sb_accent", accent)
+        if getattr(bar, "_sb_hover_bound", False):
+            return
+
+        def _enter(_event=None):
+            bar.configure(
+                button_color=getattr(bar, "_sb_handle", handle),
+                button_hover_color=getattr(bar, "_sb_accent", accent))
+
+        def _leave(_event=None):
+            bar.configure(
+                button_color=getattr(bar, "_sb_fill", fill),
+                button_hover_color=getattr(bar, "_sb_fill", fill))
+
+        # The bar's own canvas is what the pointer actually lands on.
+        canvas = getattr(bar, "_canvas", bar)
+        canvas.bind("<Enter>", _enter, add="+")
+        canvas.bind("<Leave>", _leave, add="+")
+        # Kept as attributes as well as bindings: a probe that runs the window
+        # withdrawn cannot have Tk deliver an <Enter>, and the difference
+        # between "hidden" and "shown" is exactly what it needs to assert.
+        setattr(bar, "_sb_hover_handlers", (_enter, _leave))
+        setattr(bar, "_sb_hover_bound", True)
+    except Exception:
+        pass
+
+
 class _QueueRowList(ctk.CTkScrollableFrame):
     """Themed stand-in for the queue's raw ``tk.Listbox``.
 
