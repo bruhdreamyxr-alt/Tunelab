@@ -1,0 +1,8 @@
+{
+    "venvPath": ".",
+    "venv": ".venv",
+    // tests/ and tools/ insert the repo root into sys.path at runtime before
+    // importing ui et al; extraPaths mirrors .vscode/settings.json so the
+    // CLI and the editor resolve those imports the same way.
+    "extraPaths": ["."]
+}

@@ -625,7 +625,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         # hard-coded its own tuple and so silently skipped whichever page came
         # next. Entries for lazily built pages are filled in by
         # _ensure_page_built on first visit.
-        self._page_frames = {
+        # typed dict[str, Any]: _ensure_page_built stores getattr(self, attr,
+        # None), which is Optional until the page has actually been built.
+        self._page_frames: dict[str, Any] = {
             'downloader': self.tab_downloader,
             'queue': self.tab_queue,
             'history': self.tab_history,

@@ -2407,7 +2407,9 @@ class BundleHelperSearchTests(unittest.TestCase):
 
         # And explicitly with _MEIPASS set to the same folder, as PyInstaller does.
         real = getattr(sys, "_MEIPASS", None)
-        sys._MEIPASS = os.path.join(bundle, "_internal")
+        # setattr, not sys._MEIPASS = : the attribute only exists under
+        # PyInstaller, so a direct assignment is an unknown-attribute error.
+        setattr(sys, "_MEIPASS", os.path.join(bundle, "_internal"))
         self.addCleanup(lambda: setattr(sys, "_MEIPASS", real)
                         if real is not None else delattr(sys, "_MEIPASS"))
         dirs = downloader._bundle_search_dirs()
@@ -2641,8 +2643,12 @@ class VerticalRhythmTests(unittest.TestCase):
         return (_REPO / "ui_theme.py").read_text(encoding="utf-8")
 
     def test_the_rhythm_is_one_token(self):
-        self.assertEqual(
-            re.search(r"RHYTHM = (\d+)", self._theme_source()).group(1), "8")
+        # A plain assert, not assertIsNone: only the statement form narrows the
+        # match to non-None for the checker, and a missed constant should fail
+        # as an assertion rather than AttributeError on None.
+        match = re.search(r"RHYTHM = (\d+)", self._theme_source())
+        assert match is not None
+        self.assertEqual(match.group(1), "8")
 
     def test_the_rhythm_token_is_available_to_the_ui(self):
         import ui

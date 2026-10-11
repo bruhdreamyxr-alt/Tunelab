@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from typing import Any
+from typing import Any, cast
 
 import customtkinter as ctk
 
@@ -271,7 +271,47 @@ class UiSplitsMixin:
     identical to leaving the definitions in ui.py - every ``self.`` reference
     and ``command=self.method`` call site keeps resolving, and no test scrapes
     these bodies from ui.py's source.
+
+    The names below are the app attributes and methods these bodies borrow;
+    declaring them (as Any, since the app is untyped) is what lets a type
+    checker see inside the mixin. Annotating ``self`` with the app class
+    instead would be the neater trick, but pyright rejects it: a parameter
+    type must be a supertype of the class it is declared in, and the app is a
+    *subtype* of this mixin. Assignments to new names (the swatch rows, the
+    mode entry) need no declaration.
     """
+
+    after: Any
+    _show_info_dialog: Any
+    _show_warning_dialog: Any
+    _show_error_dialog: Any
+    _show_success_dialog: Any
+    _check_macos_update: Any
+    _do_self_restart: Any
+    _start_worker: Any
+    app_update_btn: Any
+    update_dl_status: Any
+    show_toast: Any
+    _settings_card: Any
+    settings_scroll: Any
+    _CUSTOM_START_THEMES: Any
+    _CUSTOM_ROLE_GROUPS: Any
+    _on_custom_start: Any
+    _on_custom_mode: Any
+    _commit_custom_hex: Any
+    _refresh_custom_theme_ui: Any
+    reset_custom_palette: Any
+    _style_option_menu: Any
+    _style_button: Any
+    _custom_mode: Any
+    _custom_roles: Any
+    set_custom_role: Any
+    studio_file_path: Any
+    btn_export: Any
+    update_studio_progress: Any
+    sp_sld: Any
+    rv_sld: Any
+    _ensure_ffmpeg: Any
 
     def check_for_app_updates(self):
         """Check the remote manifest and trigger an in-place self-update."""
@@ -494,7 +534,9 @@ class UiSplitsMixin:
         from tkinter import colorchooser
         current = custom_palette(self._custom_roles,
                                  self._custom_mode).get(role, "#000000")
-        chosen = colorchooser.askcolor(color=current, parent=self,
+        # cast, not self: the chooser wants a real Tk Misc, and the checker
+        # cannot see that this mixin only ever runs on the app window.
+        chosen = colorchooser.askcolor(color=current, parent=cast(tk.Misc, self),
                                        title="Pick %s" % role)
         if chosen and chosen[1]:
             self.set_custom_role(role, chosen[1])

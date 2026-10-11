@@ -1,3 +1,7 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    // tests/ and tools/ insert the repo root into sys.path at runtime before
+    // importing ui et al; without extraPaths the language server cannot see
+    // those imports and flags every one of them.
+    "python.analysis.extraPaths": ["."]
 }
