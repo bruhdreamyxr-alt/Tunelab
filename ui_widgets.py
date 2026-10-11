@@ -1,14 +1,30 @@
-"""The themed queue list widget.
+"""Themed widgets and app methods lifted out of ui.py.
 
-Lifted out of ui.py (class _QueueRowList, 143 lines) so the queue's scrollable
-row container lives with the other reusable widgets instead of inside the
-7k-line module. ui.py imports it, so ``ui._QueueRowList`` and every existing
-reference still resolve to this class - it is the same object, not a copy.
+Two things live here, both moved to keep ui.py under the 6000-line guard the
+module-split tests enforce:
+
+* ``_QueueRowList`` - the queue's themed stand-in for the old raw tk.Listbox.
+* ``build_update_banner`` - the inline update offer row.
+* ``UiSplitsMixin`` - app methods that are self-contained (own dialogs and
+  workers, no page-build state) and so moved verbatim: the self-update flow,
+  the custom-colours card builder and the studio export worker. They stay
+  methods - the mixin is mixed into UniversalAudioStudio - so every call site
+  and command= reference in ui.py resolves unchanged.
 """
-import customtkinter as ctk
+import logging
+import os
+import subprocess
+import sys
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from typing import Any
 
-from ui_theme import UITheme, _on_color
+import customtkinter as ctk
+
+import downloader
+from ui_theme import UITheme, _on_color, custom_palette
+
+logger = logging.getLogger(__name__)
 
 
 def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
@@ -245,3 +261,334 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         else:
             self._rows[i].configure(
                 fg_color="transparent", text_color=self._row_fg)
+
+
+class UiSplitsMixin:
+    """Self-contained app methods moved out of ui.py to keep it under 6000 lines.
+
+    Each one owns its own dialogs and worker threads and touches no state from
+    the page-build pipeline, so mixing this into the app class is behaviourally
+    identical to leaving the definitions in ui.py - every ``self.`` reference
+    and ``command=self.method`` call site keeps resolving, and no test scrapes
+    these bodies from ui.py's source.
+    """
+
+    def check_for_app_updates(self):
+        """Check the remote manifest and trigger an in-place self-update."""
+        import updater  # local module
+        from version import __version__ as local_ver
+
+        if not updater.is_frozen():
+            self._show_info_dialog(
+                "Update Unavailable",
+                "Self-update only works in the packaged app.\n\n"
+                "You are running from source (python ui.py), so there is no\n"
+                "EXE to update. Build and run the .exe to use app updates.",
+            )
+            return
+
+        if not updater.self_update_supported():
+            # macOS: the app cannot replace itself here, but it can still report
+            # that a newer version exists and take the user to the download.
+            self._check_macos_update()
+            return
+
+        self.app_update_btn.configure(state="disabled", text="Checking...")
+        self.update_dl_status("Checking for app updates...", "#3498db")
+
+        def worker():
+            try:
+                info = updater.get_remote_update_info()
+            except Exception:
+                info = None
+
+            if not info or not info.get("version") or not info.get("download_url"):
+                self.after(0, lambda: self.update_dl_status("Could not reach update server.", "#e74c3c"))
+                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                self.after(0, lambda: self.show_toast("No update information available right now.", "warning"))
+                return
+
+            remote_ver = info["version"]
+            dl_url = info["download_url"]
+
+            if not updater.is_newer_version(remote_ver):
+                self.after(0, lambda: self.show_toast(f"You already have the latest version ({local_ver}).", "success"))
+                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                return
+
+
+            # Update available -- confirm with the user.
+            msg = (
+                f"A new version is available:\n\n"
+                f"  Current: {local_ver}\n"
+                f"  Latest:  {remote_ver}\n\n"
+                f"Do you want to download and install it now?\n"
+                f"The app will close automatically when the update is ready.\n\n"
+                f"Because this app is installed under 'C:\\Program Files', "
+                f"Windows will show an admin (UAC) prompt when installing. "
+                f"Click Yes, and the app will update and relaunch automatically."
+            )
+
+            import threading
+            confirm_event = threading.Event()
+            confirm_result = {"val": False}
+
+            def _ask_user():
+                confirm_result["val"] = messagebox.askyesno("Update Available", msg)
+                confirm_event.set()   # Signal only after the user has answered.
+
+            self.after(0, lambda: self.update_dl_status(f"Update available (v{remote_ver}). Confirming...", "#f39c12"))
+            self.after(0, _ask_user)
+
+            # Block the worker thread until the dialog closes (or times out).
+            confirm_event.wait(timeout=120)
+            result = confirm_result["val"] if confirm_event.is_set() else False
+
+            if not result:
+                # User declined (or timed out).
+                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                return
+
+            self.after(0, lambda: self.update_dl_status(f"Downloading update v{remote_ver}...", "#3498db"))
+
+            # Download the new EXE.
+            new_exe_path = updater.download_update(dl_url)
+            if not new_exe_path:
+                self.after(0, lambda: self.update_dl_status("Download failed. Please try again.", "#e74c3c"))
+                self.after(0, lambda: self._show_error_dialog("Update Error", "Failed to download the update."))
+                self.after(0, lambda: self.app_update_btn.configure(state="normal", text=f"Update to v{remote_ver}"))
+                return
+
+            old_exe_path = sys.executable
+            parent_pid = os.getpid()
+
+            self.after(0, lambda: self.update_dl_status("Update downloaded. Installing...", "#f39c12"))
+
+            launched = updater.launch_updater(
+                old_exe_path,
+                new_exe_path,
+                parent_pid,
+                # Pass the app exe so the updater relaunches it after installing.
+                extra_args=[old_exe_path],
+            )
+
+            if not launched:
+                self.after(0, lambda: self._show_error_dialog(
+                    "Update Not Installed",
+                    "Could not start the updater.\n\n"
+                    "Either updater_cli.exe is missing, or admin permission "
+                    "was declined when Windows asked."))
+                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                return
+
+            # The updater will replace the EXE and we exit so the file can be replaced.
+            self.after(0, lambda: self.update_dl_status("Update installed. Restarting...", "#27ae60"))
+            self.after(500, lambda: self._do_self_restart())
+
+
+        self._start_worker(worker)
+
+    def _build_custom_theme_card(self):
+        """The 'Custom colors' card: pick each role, watch contrast as you go."""
+        card = self._settings_card(self.settings_scroll, "Custom colors")
+        card.pack(fill="x", padx=0, pady=(0, 8))
+        pal = getattr(self, "_palette", {}) or {}
+
+        intro = ctk.CTkLabel(
+            card,
+            # One sentence, no paragraph: this card sits under the theme dropdown
+            # and says what it does and what it will not ask about. The long
+            # version explained the derivation, which the copy no longer needs
+            # to carry - the derived shades simply stay in step by themselves.
+            text="Start from a preset, then adjust. Hover shades follow your "
+                 "colours automatically.",
+            font=UITheme.F(11), anchor="w", wraplength=660, justify="left",
+            text_color=pal.get("sub", "#95a5a6"),
+        )
+        intro.pack(fill="x", padx=16, pady=(0, 10))
+        setattr(intro, "_theme_roles", {"text_color": "sub"})
+
+        # Start-from row. Seeding beats starting from blank: a user who picks a
+        # preset wants those colours, not an empty grid to fill in. One control,
+        # not two. This used to be a dropdown plus a separate
+        # "Use this palette" button, which asked for a confirmation that had
+        # nothing to confirm: picking a preset to start from is not a proposal.
+        # Selecting one now seeds it directly, like every other dropdown here.
+        start_row = ctk.CTkFrame(card, fg_color="transparent")
+        start_row.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkLabel(start_row, text="Copy from:", font=UITheme.F(11),
+                     anchor="w").pack(side="left")
+        self._custom_start_menu = ctk.CTkOptionMenu(
+            start_row, values=list(self._CUSTOM_START_THEMES),
+            command=self._on_custom_start, width=190,
+        )
+        self._custom_start_menu.set("TuneLab Dark")
+        self._custom_start_menu.pack(side="left", padx=(8, 0))
+        self._style_option_menu(self._custom_start_menu)
+
+        # One swatch row per editable role. The swatch is a button rather than a
+        # label so the whole row is a pointer target; the hex entry beside it
+        # makes every role reachable without a mouse at all.
+        grid = ctk.CTkFrame(card, fg_color="transparent")
+        grid.pack(fill="x", padx=16, pady=(0, 6))
+        self._custom_swatch_rows = {}
+        row_index = 0
+        for title, roles in self._CUSTOM_ROLE_GROUPS:
+            head = ctk.CTkLabel(grid, text=title, font=UITheme.F(11, "bold"),
+                                anchor="w")
+            head.grid(row=row_index, column=0, columnspan=3, sticky="w",
+                      pady=(6, 2))
+            setattr(head, "_theme_roles", {"text_color": "text"})
+            row_index += 1
+            for role in roles:
+                label = ctk.CTkLabel(grid, text=role, font=UITheme.F(11),
+                                     anchor="w", width=110)
+                label.grid(row=row_index, column=0, sticky="w")
+                setattr(label, "_theme_roles", {"text_color": "sub"})
+                swatch = ctk.CTkButton(
+                    grid, text="", width=54, height=UITheme.H_XS,
+                    command=lambda r=role: self._pick_custom_role(r),
+                )
+                swatch.grid(row=row_index, column=1, padx=(0, 6))
+                value = ctk.CTkEntry(grid, width=92)
+                value.grid(row=row_index, column=2, sticky="w")
+                value.bind("<Return>", lambda e, r=role: self._commit_custom_hex(r))
+                value.bind("<FocusOut>",
+                           lambda e, r=role: self._commit_custom_hex(r))
+                self._custom_swatch_rows[role] = (label, swatch, value)
+                row_index += 1
+        grid.grid_columnconfigure(2, weight=1)
+
+        # Displayed capitalised, stored lowercase: the mode key is compared
+        # against 'light' in custom_palette and is written to prefs as-is.
+        self._custom_mode_var = tk.StringVar(
+            value=self._custom_mode.capitalize())
+        mode_row = ctk.CTkFrame(card, fg_color="transparent")
+        mode_row.pack(fill="x", padx=16, pady=(0, 12))
+
+        mode_menu = ctk.CTkOptionMenu(
+            mode_row, values=["Dark", "Light"],
+            variable=self._custom_mode_var, command=self._on_custom_mode,
+            width=104,
+        )
+        mode_menu.pack(side="left")
+        self._custom_mode_menu = mode_menu
+        self._style_option_menu(mode_menu)
+        reset_btn = ctk.CTkButton(
+            mode_row, text="Reset", width=88, height=UITheme.H_XS,
+            font=UITheme.F(11),
+            command=lambda: self.reset_custom_palette(
+                self._custom_mode_menu.get().lower()),
+        )
+        # Named *_btn rather than `reset`: tests/test_download_queue.py scans
+        # ui.py for `x = self._queue_manager` aliases and then any `x.<attr>`
+        # in the file, so a local named `reset` here would make the queue-alias
+        # sweep read this button's .pack as queue API.
+        reset_btn.pack(side="left", padx=(8, 0))
+        self._style_button(reset_btn, "ghost")
+
+        self._refresh_custom_theme_ui()
+
+    def _pick_custom_role(self, role: str):
+        """Open the OS colour chooser for *role*, then apply the result."""
+        from tkinter import colorchooser
+        current = custom_palette(self._custom_roles,
+                                 self._custom_mode).get(role, "#000000")
+        chosen = colorchooser.askcolor(color=current, parent=self,
+                                       title="Pick %s" % role)
+        if chosen and chosen[1]:
+            self.set_custom_role(role, chosen[1])
+
+    def export_studio_track(self):
+        if not self.studio_file_path:
+            self._show_warning_dialog("File Missing", "Please select an audio file first.")
+            return
+
+        original_name = os.path.splitext(os.path.basename(self.studio_file_path))[0]
+        default_output_name = f"{original_name} - Slowed + Reverb.mp3"
+
+        dest = filedialog.asksaveasfilename(
+            initialfile=default_output_name,
+            defaultextension=".mp3",
+            filetypes=[("MP3 Audio file", "*.mp3")],
+            title="Export Remix Output Target"
+        )
+        if not dest:
+            return
+
+        self.btn_export.configure(text="Encoding (Using all CPU cores)...", state="disabled")
+        self.update_studio_progress(0.0)
+
+        # Capture widget values on the main thread before starting the worker.
+        _src = self.studio_file_path
+        _speed = float(self.sp_sld.get())
+        _reverb = float(self.rv_sld.get())
+
+        def run_export():
+            temp_wav = dest + ".temp.wav"
+            try:
+                self.update_studio_progress(0.1)
+                audio, sr = downloader.process_studio_dsp(_src, _speed, _reverb)
+
+                if audio is not None:
+                    self.update_studio_progress(0.4)
+                    try:
+                        import soundfile as sf
+                    except Exception:
+                        self.after(0, lambda: self._show_error_dialog(
+                            "Missing Dependency",
+                            "The required package 'soundfile' is not installed.\n\n"
+                            "Install it in your environment with:\n    python -m pip install soundfile\n\n"
+                            "Then retry the export."
+                        ))
+                        return
+                    sr_value = sr if sr is not None else 44100
+                    sr_int = int(sr_value)
+                    sf.write(temp_wav, audio.T, sr_int, subtype='PCM_16')
+
+
+                    self.update_studio_progress(0.7)
+
+                    ffmpeg_bin = self._ensure_ffmpeg()
+                    if not ffmpeg_bin:
+                        raise RuntimeError(
+                            "ffmpeg was not found. Install ffmpeg or place ffmpeg.exe "
+                            "next to the app to export the studio remix."
+                        )
+                    cmd = [
+                        ffmpeg_bin, "-y",
+                        "-i", temp_wav,
+                        "-threads", "0",
+                        "-preset", "ultrafast",
+                        "-c:a", "libmp3lame",
+                        "-q:a", "2",
+                        dest
+                    ]
+
+                    completed = subprocess.run(cmd, **downloader._no_window_kwargs())
+                    if completed.returncode != 0:
+                        raise RuntimeError(
+                            f"ffmpeg failed with exit code {completed.returncode}."
+                        )
+                    self.update_studio_progress(1.0)
+                    self.after(0, lambda: self._show_success_dialog(
+                        "Export complete",
+                        f"Saved {os.path.basename(dest)}",
+                        detail=dest))
+                else:
+                    self.update_studio_progress(0.0)
+                    self.after(0, lambda: self._show_error_dialog(
+                        "Export Failed", "The audio could not be processed."))
+            except Exception as e:
+                self.update_studio_progress(0.0)
+                self.after(0, lambda err=e: self._show_error_dialog(
+                    "Export Interrupted", "The export failed.", detail=str(err)))
+            finally:
+                if os.path.exists(temp_wav):
+                    try:
+                        os.remove(temp_wav)
+                    except Exception:
+                        logger.debug("Failed to remove temp wav", exc_info=True)
+                self.after(0, lambda: self.btn_export.configure(text="Render & Export Full Studio Remix Track", state="normal"))
+
+        self._start_worker(run_export)

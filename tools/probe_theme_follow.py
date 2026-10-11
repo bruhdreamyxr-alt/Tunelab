@@ -91,6 +91,11 @@ def _expected_fill(app, frame):
 def main() -> int:
     app = UniversalAudioStudio()
     app.withdraw()
+    # Pages build their contents on first visit now, so walk each one once or
+    # the wells and dropdowns below would simply not exist yet and every check
+    # would run against an empty set.
+    for name in list(getattr(app, "_page_frames", {}) or {}):
+        app._ensure_page_built(name)
     app.update_idletasks()
 
     start, target = _pick_target(app)

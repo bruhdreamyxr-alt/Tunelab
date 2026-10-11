@@ -128,11 +128,12 @@ from ui_theme import (  # noqa: F401  (re-exported)
 # ui._QueueRowList is this exact class and the existing call site is unchanged.
 from ui_widgets import (  # noqa: E402  (after the ctk import)
     _QueueRowList,
+    UiSplitsMixin,
     build_update_banner,
     hide_scrollbar_until_hover,
 )
 
-class UniversalAudioStudio(ctk.CTk):
+class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
     # -----------------
     # Persistent UI Preferences
     # -----------------
@@ -495,6 +496,12 @@ class UniversalAudioStudio(ctk.CTk):
         self._clipper_hover_preview_enabled = True
         self._clipper_hover_preview_muted = True
         self._clipper_thumb_generated = set()
+        # Registry of themed widgets: (widget, {option: role}). Built alongside
+        # the legacy _theme_roles attributes so a theme switch only touches
+        # widgets that are actually themed instead of cget()ing ~10 options
+        # on all ~840. Populated by _register_themed_widgets; late-built pages
+        # route through _ensure_page_built.
+        self._themed_registry: list = []
         # Toast stack, unfocused-completion badge and view caches (declared
         # here so Pylance sees them before first use).
         self._active_toasts: list[Any] = []
@@ -616,7 +623,8 @@ class UniversalAudioStudio(ctk.CTk):
         # used to rebuild this dict inline on every click, which left any other
         # tool wanting "all the pages" with no way to ask - the theme-follow probe
         # hard-coded its own tuple and so silently skipped whichever page came
-        # next.
+        # next. Entries for lazily built pages are filled in by
+        # _ensure_page_built on first visit.
         self._page_frames = {
             'downloader': self.tab_downloader,
             'queue': self.tab_queue,
@@ -658,12 +666,12 @@ class UniversalAudioStudio(ctk.CTk):
         # stays off unless it was asked for.
         self._sb_peek_pref = bool(self._prefs.get('sidebar_peek_on_hover', False))
 
+        # Downloader builds now; the rest build on first visit (see show_frame
+        # and _ensure_page_built). Building everything up front cost ~1-1.5s of
+        # the ~2.8s construct for pages the user may never open.
+        self._built_pages: set = set()
         self.build_downloader_view()
-        self.build_studio_view()
-        self.build_customization_view()
-        self.build_performance_view()
-        self.build_queue_view()
-        self.build_history_view()
+        self._built_pages.add('downloader')
 
         # -----------------
         # Rail contents (brand, grouped nav rows, badge slots, footer toggle)
@@ -708,6 +716,12 @@ class UniversalAudioStudio(ctk.CTk):
 
         # Apply the saved color theme to every widget
         self.apply_color_theme(self._color_theme_name)
+        # Index the shell + downloader page into the theme registry: every
+        # later switch replays only these entries instead of probing the tree.
+        try:
+            self._register_themed_widgets(self)
+        except Exception:
+            logger.debug("Theme registry startup pass failed", exc_info=True)
 
         # Collapse/expand shortcut (like VS Code's side bar)
         self.bind('<Control-b>', lambda e: self.toggle_sidebar())
@@ -1664,7 +1678,11 @@ class UniversalAudioStudio(ctk.CTk):
             text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
         ).pack(side="left", padx=(0, 8))
         self.history_search_entry.pack(side="left", fill="x", expand=True)
-        self.history_search_var.trace_add("write", lambda *_: self._refresh_history_view())
+        # Debounced: a rebuild destroys and recreates every row widget, so
+        # firing it on every keystroke made typing a 4-char query cost ~14s on
+        # a 200-row history. Refresh 150ms after the last keystroke instead.
+        self._history_search_after = None
+        self.history_search_var.trace_add("write", lambda *_: self._schedule_history_search())
 
         # Sort controls
         self._history_sort_key = "date"
@@ -1708,12 +1726,31 @@ class UniversalAudioStudio(ctk.CTk):
         self._refresh_history_view()
         self.tab_history.place(relx=0, rely=0, relwidth=1, relheight=1)
 
+    def _schedule_history_search(self):
+        """Debounce the history search: refresh 150ms after the last keystroke."""
+        try:
+            pending = getattr(self, "_history_search_after", None)
+            if pending:
+                self.after_cancel(pending)
+        except Exception:
+            pass
+        try:
+            self._history_search_after = self.after(150, self._refresh_history_view)
+        except Exception:
+            self._refresh_history_view()
+
+    def _show_all_history(self):
+        """Expand a paginated history list; reset by a new query or sort."""
+        self._history_show_all = True
+        self._refresh_history_view(force=True)
+
     def _set_history_sort(self, key):
         if self._history_sort_key == key:
             self._history_sort_reverse = not self._history_sort_reverse
         else:
             self._history_sort_key = key
             self._history_sort_reverse = True if key == "date" else False
+        self._history_show_all = False
         self._refresh_history_view()
 
     def _refresh_history_view(self, force: bool = False):
@@ -1758,11 +1795,14 @@ class UniversalAudioStudio(ctk.CTk):
         history = sorted(history, key=_sort_key, reverse=reverse)
 
         # Signature of what should be on screen; identical content means
-        # the widgets are already correct and can be left alone.
+        # the widgets are already correct and can be left alone. The
+        # pagination state is part of the signature: "Show all" changes which
+        # rows are visible without changing the entries themselves.
         sig = (
             query,
             self._history_sort_key,
             self._history_sort_reverse,
+            bool(getattr(self, "_history_show_all", False)),
             tuple(
                 (e.get("url"), e.get("title"), e.get("status"),
                  e.get("filepath"), e.get("completed_at"))
@@ -1801,8 +1841,31 @@ class UniversalAudioStudio(ctk.CTk):
             ).pack(pady=30)
             return
 
-        for idx, entry in enumerate(history):
+        # Pagination: the signature guard skips no-op refreshes, but the first
+        # render of a big history still destroys and recreates every row. Cap
+        # it; a query narrows the list, which is also why a search resets the
+        # cap even when its text matches what's already shown.
+        _HISTORY_PAGE = 75
+        limit = _HISTORY_PAGE if not query else len(history)
+        try:
+            if query or getattr(self, "_history_show_all", False):
+                limit = len(history)
+            else:
+                limit = _HISTORY_PAGE
+        except Exception:
+            limit = _HISTORY_PAGE
+        shown = history[:limit]
+        for idx, entry in enumerate(shown):
             self._add_history_entry(idx, entry)
+        if len(history) > len(shown):
+            more = ctk.CTkButton(
+                self._history_entries_frame,
+                text=f"Show all {len(history)} entries",
+                height=UITheme.H_SM,
+                command=self._show_all_history,
+            )
+            self._style_button(more, "ghost")
+            more.pack(pady=8)
 
     def _add_history_entry(self, idx, entry):
         """Add a single history row with title, date, status, and re-download."""
@@ -2495,120 +2558,6 @@ class UniversalAudioStudio(ctk.CTk):
             finally:
                 self.after(0, lambda: self.ytdlp_update_btn.configure(state="normal", text="⮔ Update yt-dlp"))
         self._start_worker(worker)
-
-    def check_for_app_updates(self):
-        """Check the remote manifest and trigger an in-place self-update."""
-        import updater  # local module
-        from version import __version__ as local_ver
-
-        if not updater.is_frozen():
-            self._show_info_dialog(
-                "Update Unavailable",
-                "Self-update only works in the packaged app.\n\n"
-                "You are running from source (python ui.py), so there is no\n"
-                "EXE to update. Build and run the .exe to use app updates.",
-            )
-            return
-
-        if not updater.self_update_supported():
-            # macOS: the app cannot replace itself here, but it can still report
-            # that a newer version exists and take the user to the download.
-            self._check_macos_update()
-            return
-
-        self.app_update_btn.configure(state="disabled", text="Checking...")
-        self.update_dl_status("Checking for app updates...", "#3498db")
-
-        def worker():
-            try:
-                info = updater.get_remote_update_info()
-            except Exception:
-                info = None
-
-            if not info or not info.get("version") or not info.get("download_url"):
-                self.after(0, lambda: self.update_dl_status("Could not reach update server.", "#e74c3c"))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
-                self.after(0, lambda: self.show_toast("No update information available right now.", "warning"))
-                return
-
-            remote_ver = info["version"]
-            dl_url = info["download_url"]
-
-            if not updater.is_newer_version(remote_ver):
-                self.after(0, lambda: self.show_toast(f"You already have the latest version ({local_ver}).", "success"))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
-                return
-
-            # Update available -- confirm with the user.
-            msg = (
-                f"A new version is available:\n\n"
-                f"  Current: {local_ver}\n"
-                f"  Latest:  {remote_ver}\n\n"
-                f"Do you want to download and install it now?\n"
-                f"The app will close automatically when the update is ready.\n\n"
-                f"Because this app is installed under 'C:\\Program Files', "
-                f"Windows will show an admin (UAC) prompt when installing. "
-                f"Click Yes, and the app will update and relaunch automatically."
-            )
-
-            import threading
-            confirm_event = threading.Event()
-            confirm_result = {"val": False}
-
-            def _ask_user():
-                confirm_result["val"] = messagebox.askyesno("Update Available", msg)
-                confirm_event.set()   # Signal only after the user has answered.
-
-            self.after(0, lambda: self.update_dl_status(f"Update available (v{remote_ver}). Confirming...", "#f39c12"))
-            self.after(0, _ask_user)
-
-            # Block the worker thread until the dialog closes (or times out).
-            confirm_event.wait(timeout=120)
-            result = confirm_result["val"] if confirm_event.is_set() else False
-
-            if not result:
-                # User declined (or timed out).
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
-                return
-
-            self.after(0, lambda: self.update_dl_status(f"Downloading update v{remote_ver}...", "#3498db"))
-
-            # Download the new EXE.
-            new_exe_path = updater.download_update(dl_url)
-            if not new_exe_path:
-                self.after(0, lambda: self.update_dl_status("Download failed. Please try again.", "#e74c3c"))
-                self.after(0, lambda: self._show_error_dialog("Update Error", "Failed to download the update."))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text=f"Update to v{remote_ver}"))
-                return
-
-            old_exe_path = sys.executable
-            parent_pid = os.getpid()
-
-            self.after(0, lambda: self.update_dl_status("Update downloaded. Installing...", "#f39c12"))
-
-            launched = updater.launch_updater(
-                old_exe_path,
-                new_exe_path,
-                parent_pid,
-                # Pass the app exe so the updater relaunches it after installing.
-                extra_args=[old_exe_path],
-            )
-
-            if not launched:
-                self.after(0, lambda: self._show_error_dialog(
-                    "Update Not Installed",
-                    "Could not start the updater.\n\n"
-                    "Either updater_cli.exe is missing, or admin permission "
-                    "was declined when Windows asked."))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
-                return
-
-            # The updater will replace the EXE and we exit so the file can be replaced.
-            self.after(0, lambda: self.update_dl_status("Update installed. Restarting...", "#27ae60"))
-            self.after(500, lambda: self._do_self_restart())
-
-        self._start_worker(worker)
-
 
     def _check_macos_update(self):
         """macOS update check: report a new version and offer the download.
@@ -3741,7 +3690,119 @@ class UniversalAudioStudio(ctk.CTk):
         label = res  # Already human-friendly (e.g. "1080p", "Best (up to 4K)")
         self.update_dl_detail(f"Max video resolution: {label}.", "#95a5a6")
 
+    # Pages whose views are built on demand instead of at startup.
+    # Each entry maps the page name to (tab attribute, builder, title).
+    # Downloader builds in __init__ (it is the landing page); the rest build
+    # on first show_frame, which keeps ~5/6 of widget construction out of
+    # startup. _page_frames entries start as None until built.
+    _LAZY_PAGES = (
+        ('queue', 'tab_queue', 'build_queue_view', 'Download Queue'),
+        ('history', 'tab_history', 'build_history_view', 'Download History'),
+        ('studio', 'tab_studio', 'build_studio_view', 'Slowed + Reverb Studio'),
+        ('settings', 'tab_customization', 'build_customization_view',
+         'Appearance'),
+        ('performance', 'tab_performance', 'build_performance_view',
+         'Performance Settings'),
+    )
+
+    def _discover_theme_roles(self, w) -> dict:
+        """The option->role pairs *w*'s current colours match in the legacy table.
+
+        The startup sweep in apply_color_theme does this for every widget once,
+        but a page built after startup never passes through that sweep - so a
+        lazily built label carrying an old hardcoded hex would keep it through
+        every later theme switch. Same table, per widget, at registration time.
+        """
+        found = {}
+        for opt in ('fg_color', 'hover_color', 'border_color',
+                    'text_color', 'progress_color', 'button_color',
+                    'button_hover_color', 'label_fg_color',
+                    'label_text_color'):
+            try:
+                cur = w.cget(opt)
+            except Exception:
+                continue
+            if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
+                continue
+            role = LEGACY_HEX_ROLES.get(cur.lower())
+            if role:
+                found[opt] = role
+        return found
+
+    def _register_themed_widgets(self, root=None):
+        """Index *root*'s subtree into the theme registry.
+
+        Runs once per page right after it is built (and once for the shell at
+        startup). Each entry remembers the widget and its option->role map,
+        so a later theme switch configures exactly those options instead of
+        probing every widget for options it may not have.
+        """
+        if root is None:
+            root = self
+        try:
+            widgets = list(self._iter_widgets(root))
+        except Exception:
+            return 0
+        before = len(self._themed_registry)
+        seen = {id(w) for w, _roles in self._themed_registry}
+        for w in widgets:
+            if id(w) in seen:
+                continue
+            try:
+                roles = getattr(w, "_theme_roles", None)
+                if not roles:
+                    # No explicit tag: look the current colours up once so a
+                    # page built after startup is not frozen at its build hex.
+                    roles = self._discover_theme_roles(w)
+                    if roles:
+                        setattr(w, "_theme_roles", roles)
+            except Exception:
+                continue
+            if not roles:
+                continue
+            try:
+                self._themed_registry.append((w, dict(roles)))
+            except Exception:
+                continue
+            seen.add(id(w))
+        return len(self._themed_registry) - before
+
+    def _ensure_page_built(self, name: str):
+        """Build *name*'s view on first visit; no-op once built."""
+        if name in self._built_pages:
+            return
+        for page, attr, builder, _title in self._LAZY_PAGES:
+            if page == name:
+                try:
+                    getattr(self, builder)()
+                except Exception:
+                    logger.debug("Lazy page build %r failed", name,
+                                 exc_info=True)
+                    return
+                self._page_frames[name] = getattr(self, attr, None)
+                self._built_pages.add(name)
+                # Re-run the current theme over the new widgets: they were
+                # built from the active palette, but the two type walks also
+                # have to see them. The role registry only records widgets
+                # that carry _theme_roles; the scroll well's canvas, its
+                # hide-until-hover bar and the CTk-default slider tracks are
+                # painted by _style_form_controls / _style_composites, which
+                # ran once at startup - before this page existed. Without
+                # this the first visit shows CustomTkinter's greys until the
+                # next theme switch.
+                try:
+                    self._register_themed_widgets(
+                        getattr(self, attr, None))
+                    self._style_form_controls()
+                    self._style_composites()
+                except Exception:
+                    logger.debug("Theme styling for %r failed", name,
+                                 exc_info=True)
+                return
+
     def show_frame(self, name: str):
+        # Lazily built pages do not exist yet on first click.
+        self._ensure_page_built(name)
         # Re-clicking the already-active nav button must not remap pages,
         # force repaints, or restart animations — that churn was part of
         # the residual black-flash on click-through.
@@ -5053,11 +5114,9 @@ class UniversalAudioStudio(ctk.CTk):
         A palette switch moves a button's fill, so its label colour can flip
         between the palette's text tone and its background tone (a yellow
         accent wants dark letters). The icon has to follow that decision, not
-        the theme it happened to be built under.
+        the theme it happened to be built under. The cache is keyed by ink, so
+        entries survive a switch and only genuinely-new inks re-render.
         """
-        cache = getattr(self, "_icon_cache", None)
-        if cache is not None:
-            cache.clear()
         done = 0
         for widget in self._iter_widgets():
             name = getattr(widget, "_icon_name", "")
@@ -5222,116 +5281,6 @@ class UniversalAudioStudio(ctk.CTk):
         "Horizon", "Botanical", "Monokai", "Serika Light", "Solarized Light",
         "Gruvbox Light", "Soft Lilac Light",
     )
-
-    def _build_custom_theme_card(self):
-        """The 'Custom colors' card: pick each role, watch contrast as you go."""
-        card = self._settings_card(self.settings_scroll, "Custom colors")
-        card.pack(fill="x", padx=0, pady=(0, 8))
-        pal = getattr(self, "_palette", {}) or {}
-
-        intro = ctk.CTkLabel(
-            card,
-            # One sentence, no paragraph: this card sits under the theme dropdown
-            # and says what it does and what it will not ask about. The long
-            # version explained the derivation, which the copy no longer needs
-            # to carry - the derived shades simply stay in step by themselves.
-            text="Start from a preset, then adjust. Hover shades follow your "
-                 "colours automatically.",
-            font=UITheme.F(11), anchor="w", wraplength=660, justify="left",
-            text_color=pal.get("sub", "#95a5a6"),
-        )
-        intro.pack(fill="x", padx=16, pady=(0, 10))
-        setattr(intro, "_theme_roles", {"text_color": "sub"})
-
-        # Start-from row. Seeding beats starting from blank: a user who picks a
-        # One control, not two. This used to be a dropdown plus a separate
-        # "Use this palette" button, which asked for a confirmation that had
-        # nothing to confirm: picking a preset to start from is not a proposal.
-        # Selecting one now seeds it directly, like every other dropdown here.
-        start_row = ctk.CTkFrame(card, fg_color="transparent")
-        start_row.pack(fill="x", padx=16, pady=(0, 10))
-        ctk.CTkLabel(start_row, text="Copy from:", font=UITheme.F(11),
-                     anchor="w").pack(side="left")
-        self._custom_start_menu = ctk.CTkOptionMenu(
-            start_row, values=list(self._CUSTOM_START_THEMES),
-            command=self._on_custom_start, width=190,
-        )
-        self._custom_start_menu.set("TuneLab Dark")
-        self._custom_start_menu.pack(side="left", padx=(8, 0))
-        self._style_option_menu(self._custom_start_menu)
-
-        # One swatch row per editable role. The swatch is a button rather than a
-        # label so the whole row is a pointer target; the hex entry beside it
-        # makes every role reachable without a mouse at all.
-        grid = ctk.CTkFrame(card, fg_color="transparent")
-        grid.pack(fill="x", padx=16, pady=(0, 6))
-        self._custom_swatch_rows = {}
-        row_index = 0
-        for title, roles in self._CUSTOM_ROLE_GROUPS:
-            head = ctk.CTkLabel(grid, text=title, font=UITheme.F(11, "bold"),
-                                anchor="w")
-            head.grid(row=row_index, column=0, columnspan=3, sticky="w",
-                      pady=(6, 2))
-            setattr(head, "_theme_roles", {"text_color": "text"})
-            row_index += 1
-            for role in roles:
-                label = ctk.CTkLabel(grid, text=role, font=UITheme.F(11),
-                                     anchor="w", width=110)
-                label.grid(row=row_index, column=0, sticky="w")
-                setattr(label, "_theme_roles", {"text_color": "sub"})
-                swatch = ctk.CTkButton(
-                    grid, text="", width=54, height=UITheme.H_XS,
-                    command=lambda r=role: self._pick_custom_role(r),
-                )
-                swatch.grid(row=row_index, column=1, padx=(0, 6))
-                value = ctk.CTkEntry(grid, width=92)
-                value.grid(row=row_index, column=2, sticky="w")
-                value.bind("<Return>", lambda e, r=role: self._commit_custom_hex(r))
-                value.bind("<FocusOut>",
-                           lambda e, r=role: self._commit_custom_hex(r))
-                self._custom_swatch_rows[role] = (label, swatch, value)
-                row_index += 1
-        grid.grid_columnconfigure(2, weight=1)
-
-        # Displayed capitalised, stored lowercase: the mode key is compared
-        # against 'light' in custom_palette and is written to prefs as-is.
-        self._custom_mode_var = tk.StringVar(
-            value=self._custom_mode.capitalize())
-        mode_row = ctk.CTkFrame(card, fg_color="transparent")
-        mode_row.pack(fill="x", padx=16, pady=(0, 12))
-
-        mode_menu = ctk.CTkOptionMenu(
-            mode_row, values=["Dark", "Light"],
-            variable=self._custom_mode_var, command=self._on_custom_mode,
-            width=104,
-        )
-        mode_menu.pack(side="left")
-        self._custom_mode_menu = mode_menu
-        self._style_option_menu(mode_menu)
-        reset_btn = ctk.CTkButton(
-            mode_row, text="Reset", width=88, height=UITheme.H_XS,
-            font=UITheme.F(11),
-            command=lambda: self.reset_custom_palette(
-                self._custom_mode_menu.get().lower()),
-        )
-        # Named *_btn rather than `reset`: tests/test_download_queue.py scans
-        # ui.py for `x = self._queue_manager` aliases and then any `x.<attr>`
-        # in the file, so a local named `reset` here would make the queue-alias
-        # sweep read this button's .pack as queue API.
-        reset_btn.pack(side="left", padx=(8, 0))
-        self._style_button(reset_btn, "ghost")
-
-        self._refresh_custom_theme_ui()
-
-    def _pick_custom_role(self, role: str):
-        """Open the OS colour chooser for *role*, then apply the result."""
-        from tkinter import colorchooser
-        current = custom_palette(self._custom_roles,
-                                 self._custom_mode).get(role, "#000000")
-        chosen = colorchooser.askcolor(color=current, parent=self,
-                                      title="Pick %s" % role)
-        if chosen and chosen[1]:
-            self.set_custom_role(role, chosen[1])
 
     def _on_custom_start(self, theme_name: str) -> None:
         self.start_custom_from(theme_name)
@@ -5641,50 +5590,80 @@ class UniversalAudioStudio(ctk.CTk):
         # The first pass discovers roles from legacy hardcoded hexes; afterwards
         # each widget remembers which role each option holds, so switching
         # between themes keeps working even though old values are long gone.
-        roles_seen = ('fg_color', 'hover_color', 'border_color',
-                      'text_color', 'progress_color', 'button_color',
-                      'button_hover_color', 'label_fg_color',
-                      'label_text_color')
-        for w in self._iter_widgets():
-            try:
-                roles = getattr(w, '_theme_roles', None)
-                if roles is None:
-                    roles = {}
-                    setattr(w, '_theme_roles', roles)
-            except Exception:
-                continue
-            for opt in roles_seen:
+        # Fast path: the theme registry (populated per page at build time by
+        # _register_themed_widgets) already holds (widget, roles) pairs, so a
+        # switch configures only those options instead of cget()ing ~10 options
+        # on every widget and comparing each one.
+        registry = list(getattr(self, "_themed_registry", None) or [])
+        if registry:
+            for w, roles in registry:
                 try:
-                    cur = w.cget(opt)
+                    alive = bool(w.winfo_exists())
                 except Exception:
                     continue
-                if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
+                if not alive or not roles:
                     continue
-                role = roles.get(opt)
-                if role is None:
-                    role = LEGACY_HEX_ROLES.get(cur.lower())
-                    if role is None:
+                for opt, role in roles.items():
+                    new_val = pal.get(role)
+                    if not new_val:
                         continue
-                    roles[opt] = role
-                new_val = pal.get(role)
-                if not new_val:
-                    continue
-                # Skip the configure when the widget already holds this exact
-                # colour. CTk re-runs its whole draw pipeline on every
-                # configure() - canvas item create/delete plus a font
-                # re-measure - and the walk below issues one per themed option
-                # per widget. On startup, where the widgets were just built from
-                # this very palette, 221 of the 223 configures that pass through
-                # here changed nothing, so they were 221 full redraws plus the
-                # 542-widget cget() sweep to discover that. Comparing first
-                # keeps theme *switches* correct (those genuinely differ) while
-                # making the startup pass nearly free.
-                if str(new_val).lower() == cur.lower():
-                    continue
+                    try:
+                        cur = w.cget(opt)
+                    except Exception:
+                        continue
+                    if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
+                        continue
+                    if str(new_val).lower() == cur.lower():
+                        continue
+                    try:
+                        w.configure(**{opt: new_val})
+                    except Exception:
+                        pass
+        else:
+            roles_seen = ('fg_color', 'hover_color', 'border_color',
+                          'text_color', 'progress_color', 'button_color',
+                          'button_hover_color', 'label_fg_color',
+                          'label_text_color')
+            for w in self._iter_widgets():
                 try:
-                    w.configure(**{opt: new_val})
+                    roles = getattr(w, '_theme_roles', None)
+                    if roles is None:
+                        roles = {}
+                        setattr(w, '_theme_roles', roles)
                 except Exception:
-                    pass
+                    continue
+                for opt in roles_seen:
+                    try:
+                        cur = w.cget(opt)
+                    except Exception:
+                        continue
+                    if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
+                        continue
+                    role = roles.get(opt)
+                    if role is None:
+                        role = LEGACY_HEX_ROLES.get(cur.lower())
+                        if role is None:
+                            continue
+                        roles[opt] = role
+                    new_val = pal.get(role)
+                    if not new_val:
+                        continue
+                    # Skip the configure when the widget already holds this exact
+                    # colour. CTk re-runs its whole draw pipeline on every
+                    # configure() - canvas item create/delete plus a font
+                    # re-measure - and the walk below issues one per themed option
+                    # per widget. On startup, where the widgets were just built from
+                    # this very palette, 221 of the 223 configures that pass through
+                    # here changed nothing, so they were 221 full redraws plus the
+                    # 542-widget cget() sweep to discover that. Comparing first
+                    # keeps theme *switches* correct (those genuinely differ) while
+                    # making the startup pass nearly free.
+                    if str(new_val).lower() == cur.lower():
+                        continue
+                    try:
+                        w.configure(**{opt: new_val})
+                    except Exception:
+                        pass
 
         # Structural pieces that don't use legacy hexes:
         try:
@@ -5851,100 +5830,6 @@ class UniversalAudioStudio(ctk.CTk):
 
     def update_studio_progress(self, value):
         self.after(0, lambda: self.studio_progress_bar.set(min(max(value, 0.0), 1.0)))
-
-    def export_studio_track(self):
-        if not self.studio_file_path:
-            self._show_warning_dialog("File Missing", "Please select an audio file first.")
-            return
-
-        original_name = os.path.splitext(os.path.basename(self.studio_file_path))[0]
-        default_output_name = f"{original_name} - Slowed + Reverb.mp3"
-
-        dest = filedialog.asksaveasfilename(
-            initialfile=default_output_name,
-            defaultextension=".mp3",
-            filetypes=[("MP3 Audio file", "*.mp3")],
-            title="Export Remix Output Target"
-        )
-        if not dest:
-            return
-
-        self.btn_export.configure(text="Encoding (Using all CPU cores)...", state="disabled")
-        self.update_studio_progress(0.0)
-
-        # Capture widget values on the main thread before starting the worker.
-        _src = self.studio_file_path
-        _speed = float(self.sp_sld.get())
-        _reverb = float(self.rv_sld.get())
-
-        def run_export():
-            temp_wav = dest + ".temp.wav"
-            try:
-                self.update_studio_progress(0.1)
-                audio, sr = downloader.process_studio_dsp(_src, _speed, _reverb)
-
-                if audio is not None:
-                    self.update_studio_progress(0.4)
-                    try:
-                        import soundfile as sf
-                    except Exception:
-                        self.after(0, lambda: self._show_error_dialog(
-                            "Missing Dependency",
-                            "The required package 'soundfile' is not installed.\n\n"
-                            "Install it in your environment with:\n    python -m pip install soundfile\n\n"
-                            "Then retry the export."
-                        ))
-                        return
-                    sr_value = sr if sr is not None else 44100
-                    sr_int = int(sr_value)
-                    sf.write(temp_wav, audio.T, sr_int, subtype='PCM_16')
-
-
-                    self.update_studio_progress(0.7)
-
-                    ffmpeg_bin = self._ensure_ffmpeg()
-                    if not ffmpeg_bin:
-                        raise RuntimeError(
-                            "ffmpeg was not found. Install ffmpeg or place ffmpeg.exe "
-                            "next to the app to export the studio remix."
-                        )
-                    cmd = [
-                        ffmpeg_bin, "-y",
-                        "-i", temp_wav,
-                        "-threads", "0",
-                        "-preset", "ultrafast",
-                        "-c:a", "libmp3lame",
-                        "-q:a", "2",
-                        dest
-                    ]
-
-                    completed = subprocess.run(cmd, **downloader._no_window_kwargs())
-                    if completed.returncode != 0:
-                        raise RuntimeError(
-                            f"ffmpeg failed with exit code {completed.returncode}."
-                        )
-                    self.update_studio_progress(1.0)
-                    self.after(0, lambda: self._show_success_dialog(
-                        "Export complete",
-                        f"Saved {os.path.basename(dest)}",
-                        detail=dest))
-                else:
-                    self.update_studio_progress(0.0)
-                    self.after(0, lambda: self._show_error_dialog(
-                        "Export Failed", "The audio could not be processed."))
-            except Exception as e:
-                self.update_studio_progress(0.0)
-                self.after(0, lambda err=e: self._show_error_dialog(
-                    "Export Interrupted", "The export failed.", detail=str(err)))
-            finally:
-                if os.path.exists(temp_wav):
-                    try:
-                        os.remove(temp_wav)
-                    except Exception:
-                        logger.debug("Failed to remove temp wav", exc_info=True)
-                self.after(0, lambda: self.btn_export.configure(text="Render & Export Full Studio Remix Track", state="normal"))
-
-        self._start_worker(run_export)
 
 
 def _setup_logging() -> None:

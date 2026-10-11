@@ -68,6 +68,9 @@ if theme:
     app._apply_custom_palette(persist=False)
 
 app.show_frame(PAGE)
+# Read after the switch, not at construction: pages build on first visit, so
+# the scroll well does not exist until show_frame has run for that page.
+_scroll = getattr(app, "settings_scroll", None)
 for _ in range(40):
     app.update_idletasks()
     app.update()

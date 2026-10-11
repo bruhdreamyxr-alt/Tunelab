@@ -855,12 +855,19 @@ class MessageboxRetirementTests(unittest.TestCase):
     SHOW_CALLS = re.compile(r"\bmessagebox\.(show\w*)\(")
     ASK_CALLS = re.compile(r"\bmessagebox\.(ask\w*)\(")
 
+    def _app_source(self):
+        """ui.py plus the mixin module: check_for_app_updates moved there, and
+        its install confirmation is still a confirmation the app can raise."""
+        return _source() + (_REPO / "ui_widgets.py").read_text(encoding="utf-8")
+
     def test_no_informational_or_warning_boxes_are_left(self):
         self.assertEqual(self.SHOW_CALLS.findall(_source()), ["showerror"])
 
     def test_confirmations_are_still_synchronous(self):
         # 6: queue remove/cancel/clear, Clear History, the cache clear, and
-        # Remove Missing Files (history). The exact number is a tripwire - a
+        # Remove Missing Files (history) - 5 in ui.py - plus the self-update
+        # install confirmation, which lives with check_for_app_updates in
+        # ui_widgets.py. The exact number is a tripwire - a
         # confirmation dialog appearing or disappearing unnoticed is how a
         # destructive action ends up with no prompt, so a new one means updating
         # this count deliberately rather than by accident.
@@ -869,7 +876,7 @@ class MessageboxRetirementTests(unittest.TestCase):
         # never a destructive-action confirmation - it asked whether to install
         # an update, which is a choice, not a guard - so dropping it here is the
         # point of the change and not a lost prompt.
-        self.assertEqual(len(self.ASK_CALLS.findall(_source())), 6)
+        self.assertEqual(len(self.ASK_CALLS.findall(self._app_source())), 6)
 
     def test_worker_thread_dialogs_are_marshalled(self):
         # A Toplevel built on a worker thread is a Tk threading crash, so the
@@ -891,8 +898,10 @@ class TechnicalDetailTests(unittest.TestCase):
         self.assertIn("Nothing to retry", body)   # empty-state, not a dialog
 
     def test_export_and_download_failures_keep_the_raw_log_copyable(self):
-        src = _source()
+        src = _source() + (_REPO / "ui_widgets.py").read_text(encoding="utf-8")
         # Headline for the box, untouched error text for the detail block.
+        # The export path moved into ui_widgets.UiSplitsMixin, so its str(err)
+        # detail lives there now; the download path's cleaned_err is in ui.py.
         self.assertIn("detail=cleaned_err", src)
         self.assertIn('detail=str(err)', src)
 
@@ -1875,6 +1884,10 @@ class CustomThemeEditorTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.app = ui.UniversalAudioStudio()
         self.app.withdraw()
+        # The editor lives on the settings page, which is now built lazily on
+        # first visit; tests reach its widgets without navigating, so visit for
+        # them. show_frame would work too but drags in a visible page switch.
+        self.app._ensure_page_built("settings")
         self.app.update_idletasks()
         self._pref_path = self.app._pref_path
 
@@ -1901,6 +1914,7 @@ class CustomThemeEditorTests(unittest.TestCase):
             json.dump(prefs, fh)
         self.app = ui.UniversalAudioStudio()
         self.app.withdraw()
+        self.app._ensure_page_built("settings")
         self.app.update_idletasks()
         return self.app
 
@@ -2212,6 +2226,9 @@ class PerformanceSettingsPersistTests(unittest.TestCase):
     def _build(self):
         app = ui.UniversalAudioStudio()
         app.withdraw()
+        # The controls under test live on the performance page, which builds on
+        # first visit now; the suite drives the widgets directly, so build it.
+        app._ensure_page_built("performance")
         app.update_idletasks()
         return app
 
