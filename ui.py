@@ -617,6 +617,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         self.tab_performance = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         self.tab_queue = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         self.tab_history = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        self.tab_aep = ctk.CTkFrame(self.content_frame, fg_color="transparent")
 
         # The single page registry, built once every page frame exists (history
         # is created last, so this cannot sit with the others above). show_frame
@@ -632,6 +633,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             'queue': self.tab_queue,
             'history': self.tab_history,
             'studio': self.tab_studio,
+            'aep': self.tab_aep,
             'settings': self.tab_customization,
             'performance': self.tab_performance,
         }
@@ -640,7 +642,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         # hairline edge as the dialogs. They are stacked in one hole and
         # raised on switch, so they all need the identical shape or a switch
         # would flash a differently edged panel.
-        for _page in (self.tab_downloader, self.tab_studio,
+        for _page in (self.tab_downloader, self.tab_studio, self.tab_aep,
                       self.tab_customization, self.tab_performance,
                       self.tab_queue, self.tab_history):
             _page.configure(
@@ -732,9 +734,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         self.bind('<Control-v>', self._paste_url_anywhere)
         self.bind('<Control-V>', self._paste_url_anywhere)
 
-        # Quick nav: Ctrl+1..6 jump straight to a page.
+        # Quick nav: Ctrl+1..7 jump straight to a page.
         for _n, _page in enumerate(
-            ("downloader", "queue", "history", "studio", "settings", "performance"),
+            ("downloader", "queue", "history", "studio", "aep", "settings", "performance"),
             start=1,
         ):
             self.bind(f'<Control-{_n}>', lambda e, p=_page: self.show_frame(p))
@@ -3701,6 +3703,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         ('queue', 'tab_queue', 'build_queue_view', 'Download Queue'),
         ('history', 'tab_history', 'build_history_view', 'Download History'),
         ('studio', 'tab_studio', 'build_studio_view', 'Slowed + Reverb Studio'),
+        ('aep', 'tab_aep', 'build_aep_view', 'AEP Version Converter'),
         ('settings', 'tab_customization', 'build_customization_view',
          'Appearance'),
         ('performance', 'tab_performance', 'build_performance_view',
@@ -3816,6 +3819,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             'queue': 'Download Queue',
             'history': 'Download History',
             'studio': 'Slowed + Reverb Studio',
+            'aep': 'AEP Version Converter',
             'settings': 'Appearance',
             'performance': 'Performance Settings',
         }
@@ -3955,13 +3959,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
     # Collapsible sidebar
     # -----------------
     # The pages you work in, then the pages you tune. The flat order is
-    # unchanged - Ctrl+1..6 still map to downloader, queue, history, studio,
-    # settings, performance - grouping only adds a header above each set.
-    _SB_GROUPS = (("MENU", ("downloader", "queue", "history", "studio")),
+    # unchanged - Ctrl+1..7 still map to downloader, queue, history, studio,
+    # aep converter, settings, performance - grouping only adds a header
+    # above each set.
+    _SB_GROUPS = (("MENU", ("downloader", "queue", "history", "studio", "aep")),
                   ("SETUP", ("settings", "performance")))
     # Shown in each row's right slot, mirroring the <Control-N> bindings.
     _SB_KEYS = {"downloader": "1", "queue": "2", "history": "3",
-                "studio": "4", "settings": "5", "performance": "6"}
+                "studio": "4", "aep": "5", "settings": "6", "performance": "7"}
 
     def _build_sidebar(self):
         """Brand, grouped nav rows, badge slots, footer toggle, accent pill.
@@ -3982,6 +3987,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             'queue': ('queue', 'Queue'),
             'history': ('history', 'History'),
             'studio': ('studio', 'Studio'),
+            'aep': ('aep', 'AEP Convert'),
             'settings': ('settings', 'Theme'),
             'performance': ('performance', 'Speed'),
         }

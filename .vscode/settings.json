@@ -1,5 +1,9 @@
 {
     "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    // Pin the Run button / "Run Python File" to the venv too. Without this,
+    // VS Code runs main.py with the system Python, which lacks the venv's
+    // packages (customtkinter, py-aep, ...) and the app fails on launch.
+    "python.terminal.activateEnvironment": true,
     // tests/ and tools/ insert the repo root into sys.path at runtime before
     // importing ui et al; without extraPaths the language server cannot see
     // those imports and flags every one of them.

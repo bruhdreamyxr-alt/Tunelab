@@ -10,6 +10,7 @@ soundfile==0.14.0          # bundles libsndfile
 sounddevice==0.5.6         # bundles PortAudio
 pedalboard==0.9.23
 mutagen==1.48.1
+py-aep==0.18.1          # .aep version converter tab (After Effects projects)
 yt-dlp==2026.8.19
 curl_cffi==0.15.0
 certifi==2026.7.22

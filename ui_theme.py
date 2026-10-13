@@ -241,6 +241,27 @@ def _icon_shapes(name: str) -> tuple[tuple[Any, ...], ...]:
         # plain X the queue-wide Cancel already uses.
         return (('polyfill', [(6.6, 6), (9.2, 6), (9.2, 18), (6.6, 18)]),
                 ('polyfill', [(11.2, 6), (18.6, 12), (11.2, 18)]))
+    if name == 'clapper':
+        # A clapperboard: the board body plus the hinged slate on top. The
+        # slate tilts up to the right (open), with two light bars for its
+        # stripes - skewed with it, so they read as painted on the slate
+        # rather than floating. Reads at 18px next to the studio's bars.
+        return (('poly', [(4.5, 9.5), (4.5, 19.5), (19.5, 19.5),
+                          (19.5, 9.5), (4.5, 9.5)]),
+                ('poly', [(4.7, 8.2), (18.9, 4.5), (19.5, 6.5),
+                          (5.3, 10.2), (4.7, 8.2)]),
+                ('line', 8.0, 7.4, 9.2, 9.4),
+                ('line', 12.4, 6.2, 13.6, 8.2))
+    if name == 'aep':
+        # A project file being brought down a version: a document with a
+        # folded corner, and a down-arrow inside it. Reads at 18px next to
+        # the studio's bars, and distinct from 'folder' (closed tab box),
+        # 'refresh' (open arc) and 'download' (arrow to a tray line).
+        return (('poly', [(5.75, 20.5), (5.75, 3.5), (14.25, 3.5), (18.25, 7.5),
+                           (18.25, 20.5), (5.75, 20.5)]),
+                ('poly', [(14.25, 3.5), (14.25, 7.5), (18.25, 7.5)]),
+                ('line', 12, 11, 12, 15.5),
+                ('poly', [(9.85, 13.4), (12, 15.9), (14.15, 13.4)]))
     return ()
 
 

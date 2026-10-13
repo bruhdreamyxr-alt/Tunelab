@@ -294,6 +294,17 @@ class UiSplitsMixin:
     show_toast: Any
     _settings_card: Any
     settings_scroll: Any
+    tab_aep: Any
+    aep_src_path: Any
+    aep_src_lbl: Any
+    aep_src_ver_lbl: Any
+    aep_year_var: Any
+    aep_dest_lbl: Any
+    aep_convert_btn: Any
+    aep_progress: Any
+    aep_busy: Any
+    _aep_missing_dependency: Any
+    _show_error_dialog: Any
     _CUSTOM_START_THEMES: Any
     _CUSTOM_ROLE_GROUPS: Any
     _on_custom_start: Any
@@ -634,3 +645,207 @@ class UiSplitsMixin:
                 self.after(0, lambda: self.btn_export.configure(text="Render & Export Full Studio Remix Track", state="normal"))
 
         self._start_worker(run_export)
+
+    # --- AEP Version Converter (TAB: 'aep') ---
+    def build_aep_view(self):
+        """File card, target-year card, destination + Convert.
+
+        The page is deliberately plain data flow: pick a file (which reads
+        and shows the AE version that saved it), pick a target year
+        (2022-2026 radio chips), confirm the auto-named destination, press
+        Convert. The heavy work runs on a worker thread via _start_worker;
+        every widget touch afterwards goes through after(0, ...) because Tk
+        widgets may only be touched on the main thread.
+        """
+        self.aep_src_path = ""
+        self.aep_busy = False
+        import tkinter as tk
+
+        scroll = ctk.CTkScrollableFrame(self.tab_aep, fg_color="transparent")
+        scroll.pack(fill="both", expand=True,
+                    padx=UITheme.RADIUS_CARD, pady=UITheme.RADIUS_CARD)
+
+        # Source file card.
+        src_card = self._settings_card(scroll, "Project file")
+        src_card.pack(fill="x", padx=0, pady=(0, 8))
+        row = ctk.CTkFrame(src_card, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(0, 4))
+        self.aep_src_lbl = ctk.CTkLabel(
+            row, text="No .aep file chosen...",
+            font=UITheme.F(12, "italic"), anchor="w")
+        self.aep_src_lbl.pack(side="left", fill="x", expand=True)
+        browse = ctk.CTkButton(row, text="Browse .aep", width=110,
+                               command=self.browse_aep_file)
+        browse.pack(side="right", padx=(10, 0))
+        self._style_button(browse, "secondary")
+        self.aep_src_ver_lbl = ctk.CTkLabel(
+            src_card, text="Pick a project to read the version that saved it.",
+            font=UITheme.F(11), anchor="w")
+        self.aep_src_ver_lbl.pack(fill="x", padx=16, pady=(0, 10))
+
+        # Target year card: five radio chips, defaulting to the newest.
+        tgt_card = self._settings_card(scroll, "Convert to")
+        tgt_card.pack(fill="x", padx=0, pady=(0, 8))
+        self.aep_year_var = tk.IntVar(value=2026)
+        chips = ctk.CTkFrame(tgt_card, fg_color="transparent")
+        chips.pack(fill="x", padx=16, pady=(0, 4))
+        for _yr in (2022, 2023, 2024, 2025, 2026):
+            rb = ctk.CTkRadioButton(
+                chips, text=str(_yr), variable=self.aep_year_var,
+                value=_yr, command=self._on_aep_year_change)
+            rb.pack(side="left", padx=(0, 14))
+        ctk.CTkLabel(
+            tgt_card,
+            text="The copy is re-stamped for that year's After Effects. "
+                 "Going older never migrates effects or features, so newer "
+                 "content may not render there - the original is untouched.",
+            font=UITheme.F(11), wraplength=600, justify="left",
+            anchor="w").pack(fill="x", padx=16, pady=(0, 10))
+
+        # Destination + Convert card.
+        out_card = self._settings_card(scroll, "Destination")
+        out_card.pack(fill="x", padx=0, pady=(0, 8))
+        self.aep_dest_lbl = ctk.CTkLabel(
+            out_card, text="Choose a file first.",
+            font=UITheme.F(11), anchor="w")
+        self.aep_dest_lbl.pack(fill="x", padx=16, pady=(0, 4))
+        # Convert button + progress.
+        self.aep_convert_btn = ctk.CTkButton(
+            out_card, text="Convert Project", width=200,
+            command=self.start_aep_convert)
+        self.aep_convert_btn.pack(anchor="w", padx=16, pady=(2, 6))
+        self._style_button(self.aep_convert_btn, "primary")
+        self.aep_progress = ctk.CTkProgressBar(out_card, width=400)
+        self.aep_progress.pack(fill="x", padx=16, pady=(0, 12))
+        self.aep_progress.set(0.0)
+
+    def browse_aep_file(self):
+        """Pick a .aep file, then read the AE version that saved it."""
+        sel = filedialog.askopenfilename(
+            title="Select After Effects Project",
+            filetypes=[("After Effects Project", "*.aep"),
+                       ("All files", "*.*")])
+        if not sel:
+            return
+        self.aep_src_path = sel
+        self.aep_src_lbl.configure(text=os.path.basename(sel))
+        self.aep_src_ver_lbl.configure(text="Reading project version...")
+        self._refresh_aep_dest_label()
+        self._start_worker(self._aep_read_version_worker)
+
+    def _aep_read_version_worker(self):
+        """Read the source version off the worker thread; marshal to UI."""
+        import aep_convert  # local module; py_aep itself stays optional
+        path = self.aep_src_path
+        try:
+            ver = aep_convert.read_version(path)
+            label = "Saved by %s." % aep_convert.describe_version(ver)
+        except aep_convert.AepMissingDependency as exc:
+            # Not the file's fault: the running Python lacks py-aep. The
+            # version label only holds one line, so keep it short and put the
+            # interpreter path + fixes in a dialog.
+            self.after(0, lambda t=str(exc): self._aep_missing_dependency(t))
+            return
+        except Exception as exc:
+            label = "Could not read this file: %s" % exc
+        self.after(0, lambda t=label: self.aep_src_ver_lbl.configure(text=t))
+
+    def _aep_missing_dependency(self, message):
+        """Show the py-aep install dialog; keep the version line short."""
+        try:
+            self.aep_src_ver_lbl.configure(
+                text="Converter library missing - see the popup.")
+        except Exception:
+            pass
+        self._show_error_dialog("Converter Library Missing", message)
+
+    def _aep_target_year(self):
+        try:
+            return int(self.aep_year_var.get())
+        except Exception:
+            return 2026
+
+    def _refresh_aep_dest_label(self):
+        """Show where the converted copy will land."""
+        if not getattr(self, "aep_src_path", ""):
+            try:
+                self.aep_dest_lbl.configure(text="Choose a file first.")
+            except Exception:
+                pass
+            return
+        import aep_convert  # local module
+        year = self._aep_target_year()
+        try:
+            dest = aep_convert.output_path_for(self.aep_src_path, year)
+            self.aep_dest_lbl.configure(
+                text="Saves as: %s" % os.path.basename(dest))
+        except Exception:
+            pass
+
+    def _on_aep_year_change(self):
+        self._refresh_aep_dest_label()
+
+    def start_aep_convert(self):
+        """Validate, then convert on a worker thread (never block the UI)."""
+        if getattr(self, "aep_busy", False):
+            return
+        if not getattr(self, "aep_src_path", ""):
+            self.show_toast("Pick an .aep file first.", "warning")
+            return
+        year = self._aep_target_year()
+        self.aep_busy = True
+        try:
+            self.aep_convert_btn.configure(state="disabled",
+                                           text="Converting...")
+            self.aep_progress.set(0.15)
+        except Exception:
+            pass
+        self._start_worker(lambda: self._aep_convert_worker(year))
+
+    def _aep_convert_worker(self, year):
+        """Run the relabel off-thread; all widget touches via after(0, ...)."""
+        import aep_convert  # local module
+        src = self.aep_src_path
+        try:
+            result = aep_convert.convert(src, year)
+        except Exception as exc:
+            self.after(0, lambda err=exc: self._aep_convert_failed(str(err)))
+            return
+        try:
+            self.aep_progress.set(0.9)
+        except Exception:
+            pass
+        self.after(0, lambda res=result: self._aep_convert_done(res))
+
+    def _aep_convert_done(self, result):
+        """Re-enable the UI and confirm the converted copy's path."""
+        self.aep_busy = False
+        try:
+            self.aep_convert_btn.configure(state="normal",
+                                           text="Convert Project")
+            self.aep_progress.set(1.0)
+        except Exception:
+            pass
+        import aep_convert  # local module
+        try:
+            back = aep_convert.describe_version(
+                aep_convert.read_version(result["out_path"]))
+        except Exception:
+            back = "AE %d" % result["year"]
+        self.show_toast("Saved %s (%s)."
+                        % (os.path.basename(result["out_path"]), back),
+                        "success")
+        self._show_success_dialog(
+            "Conversion Complete",
+            "Your project now opens in AE %d.\nSaved as:\n%s"
+            % (result["year"], result["out_path"]))
+
+    def _aep_convert_failed(self, message):
+        self.aep_busy = False
+        try:
+            self.aep_convert_btn.configure(state="normal",
+                                           text="Convert Project")
+            self.aep_progress.set(0.0)
+        except Exception:
+            pass
+        self._show_error_dialog("Conversion Failed", message)

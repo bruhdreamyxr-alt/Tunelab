@@ -67,6 +67,10 @@ a = Analysis(
         'mutagen',
         'mutagen.mp3',
         'mutagen.id3',
+        # The AEP converter tab's parser (Fortiche's reverse-engineered .aep
+        # reader). Imported lazily via aep_convert at conversion time, so the
+        # static analysis cannot follow it — same story as PIL/pedalboard.
+        'py_aep',
         # downloader.py and ui.py resolve these through
         # importlib.import_module(<variable>), which PyInstaller's static
         # analysis cannot follow - it only follows literal `import x` and a
