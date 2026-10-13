@@ -286,6 +286,8 @@ class UiSplitsMixin:
     _show_warning_dialog: Any
     _show_error_dialog: Any
     _show_success_dialog: Any
+    _set_pref: Any
+    _prefs: Any
     _check_macos_update: Any
     _do_self_restart: Any
     _start_worker: Any
@@ -303,7 +305,6 @@ class UiSplitsMixin:
     aep_convert_btn: Any
     aep_progress: Any
     aep_busy: Any
-    _aep_missing_dependency: Any
     _show_error_dialog: Any
     _CUSTOM_START_THEMES: Any
     _CUSTOM_ROLE_GROUPS: Any
@@ -658,6 +659,7 @@ class UiSplitsMixin:
         widgets may only be touched on the main thread.
         """
         self.aep_src_path = ""
+        self.aep_src_lbl_version = ""
         self.aep_busy = False
         import tkinter as tk
 
@@ -721,13 +723,22 @@ class UiSplitsMixin:
 
     def browse_aep_file(self):
         """Pick a .aep file, then read the AE version that saved it."""
+        start = getattr(self, "_prefs", {}).get("aep_last_dir", "") or ""
+        if not (start and os.path.isdir(start)):
+            start = os.path.expanduser("~")
         sel = filedialog.askopenfilename(
             title="Select After Effects Project",
+            initialdir=start,
             filetypes=[("After Effects Project", "*.aep"),
                        ("All files", "*.*")])
         if not sel:
             return
         self.aep_src_path = sel
+        self.aep_src_version = ""
+        try:
+            self._set_pref("aep_last_dir", os.path.dirname(os.path.abspath(sel)))
+        except Exception:
+            pass
         self.aep_src_lbl.configure(text=os.path.basename(sel))
         self.aep_src_ver_lbl.configure(text="Reading project version...")
         self._refresh_aep_dest_label()
@@ -739,7 +750,8 @@ class UiSplitsMixin:
         path = self.aep_src_path
         try:
             ver = aep_convert.read_version(path)
-            label = "Saved by %s." % aep_convert.describe_version(ver)
+            desc = aep_convert.describe_version(ver)
+            label = "Saved by %s." % desc
         except aep_convert.AepMissingDependency as exc:
             # Not the file's fault: the running Python lacks py-aep. The
             # version label only holds one line, so keep it short and put the
@@ -748,7 +760,17 @@ class UiSplitsMixin:
             return
         except Exception as exc:
             label = "Could not read this file: %s" % exc
-        self.after(0, lambda t=label: self.aep_src_ver_lbl.configure(text=t))
+            ver = ""
+        self.after(0, lambda t=label, v=ver: self._aep_version_ready(t, v))
+
+    def _aep_version_ready(self, label, version):
+        """Show the read version, then refresh the dest line with from-to."""
+        try:
+            self.aep_src_lbl_version = version
+            self.aep_src_ver_lbl.configure(text=label)
+        except Exception:
+            pass
+        self._refresh_aep_dest_label()
 
     def _aep_missing_dependency(self, message):
         """Show the py-aep install dialog; keep the version line short."""
@@ -757,7 +779,7 @@ class UiSplitsMixin:
                 text="Converter library missing - see the popup.")
         except Exception:
             pass
-        self._show_error_dialog("Converter Library Missing", message)
+        self._show_error_dialog("Converter Library Missing", message=message)
 
     def _aep_target_year(self):
         try:
@@ -766,7 +788,7 @@ class UiSplitsMixin:
             return 2026
 
     def _refresh_aep_dest_label(self):
-        """Show where the converted copy will land."""
+        """Show where the converted copy will land, with the from-to route."""
         if not getattr(self, "aep_src_path", ""):
             try:
                 self.aep_dest_lbl.configure(text="Choose a file first.")
@@ -777,8 +799,23 @@ class UiSplitsMixin:
         year = self._aep_target_year()
         try:
             dest = aep_convert.output_path_for(self.aep_src_path, year)
-            self.aep_dest_lbl.configure(
-                text="Saves as: %s" % os.path.basename(dest))
+        except Exception:
+            return
+        src_ver = getattr(self, "aep_src_lbl_version", "") or ""
+        try:
+            if src_ver:
+                try:
+                    route = "%s \u2192 %s: " % (
+                        aep_convert.describe_version(src_ver),
+                        aep_convert.describe_version(
+                            aep_convert.TARGET_VERSIONS[year]))
+                except Exception:
+                    route = ""
+                self.aep_dest_lbl.configure(
+                    text="%sSaves as: %s" % (route, os.path.basename(dest)))
+            else:
+                self.aep_dest_lbl.configure(
+                    text="Saves as: %s" % os.path.basename(dest))
         except Exception:
             pass
 

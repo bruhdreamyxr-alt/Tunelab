@@ -27,6 +27,7 @@ widget construction, so it stays unit-testable without a window.
 """
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 # Target releases offered in the UI, as the canonical version string py_aep
@@ -181,7 +182,7 @@ def convert(src_path: str, year: int,
     except Exception as exc:
         raise AepError("Could not re-stamp the project (%s)." % exc) from exc
     try:
-        app.project.save(dest)
+        app.project.save(Path(dest))
     except Exception as exc:
         raise AepError("Could not write %s (%s)."
                        % (os.path.basename(dest), exc)) from exc

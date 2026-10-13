@@ -195,6 +195,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             "aria2_connections": 16,
             "concurrent_fragment_downloads": 8,
             "max_video_resolution": "Best (up to 4K)",
+            # The AEP converter's Browse dialog opens here. Without it the
+            # dialog restarts in the working directory every time, and
+            # project files almost always live in one folder.
+            "aep_last_dir": "",
         }
 
     def _load_prefs(self) -> dict:
