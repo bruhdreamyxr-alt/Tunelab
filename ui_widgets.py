@@ -651,8 +651,10 @@ class UiSplitsMixin:
     def build_aep_view(self):
         """File card, target-year card, destination + Convert.
 
-        The page is deliberately plain data flow: pick a file (which reads
-        and shows the AE version that saved it), pick a target year
+        Accepts .aep projects and .ffx animation presets (aep_convert
+        dispatches on the extension). The page is deliberately plain data
+        flow: pick a file (which reads and shows the AE version that saved
+        it), pick a target year
         (2022-2026 radio chips), confirm the auto-named destination, press
         Convert. The heavy work runs on a worker thread via _start_worker;
         every widget touch afterwards goes through after(0, ...) because Tk
@@ -668,20 +670,20 @@ class UiSplitsMixin:
                     padx=UITheme.RADIUS_CARD, pady=UITheme.RADIUS_CARD)
 
         # Source file card.
-        src_card = self._settings_card(scroll, "Project file")
+        src_card = self._settings_card(scroll, "Project or preset file")
         src_card.pack(fill="x", padx=0, pady=(0, 8))
         row = ctk.CTkFrame(src_card, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 4))
         self.aep_src_lbl = ctk.CTkLabel(
-            row, text="No .aep file chosen...",
+            row, text="No .aep or .ffx file chosen...",
             font=UITheme.F(12, "italic"), anchor="w")
         self.aep_src_lbl.pack(side="left", fill="x", expand=True)
-        browse = ctk.CTkButton(row, text="Browse .aep", width=110,
+        browse = ctk.CTkButton(row, text="Browse File", width=110,
                                command=self.browse_aep_file)
         browse.pack(side="right", padx=(10, 0))
         self._style_button(browse, "secondary")
         self.aep_src_ver_lbl = ctk.CTkLabel(
-            src_card, text="Pick a project to read the version that saved it.",
+            src_card, text="Pick a project or preset to read the version that saved it.",
             font=UITheme.F(11), anchor="w")
         self.aep_src_ver_lbl.pack(fill="x", padx=16, pady=(0, 10))
 
@@ -700,7 +702,8 @@ class UiSplitsMixin:
             tgt_card,
             text="The copy is re-stamped for that year's After Effects. "
                  "Going older never migrates effects or features, so newer "
-                 "content may not render there - the original is untouched.",
+                 "content - or a preset's newer effects - may not work "
+                 "there. The original is untouched.",
             font=UITheme.F(11), wraplength=600, justify="left",
             anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
@@ -713,7 +716,7 @@ class UiSplitsMixin:
         self.aep_dest_lbl.pack(fill="x", padx=16, pady=(0, 4))
         # Convert button + progress.
         self.aep_convert_btn = ctk.CTkButton(
-            out_card, text="Convert Project", width=200,
+            out_card, text="Convert File", width=200,
             command=self.start_aep_convert)
         self.aep_convert_btn.pack(anchor="w", padx=16, pady=(2, 6))
         self._style_button(self.aep_convert_btn, "primary")
@@ -722,14 +725,16 @@ class UiSplitsMixin:
         self.aep_progress.set(0.0)
 
     def browse_aep_file(self):
-        """Pick a .aep file, then read the AE version that saved it."""
+        """Pick a project or preset, then read the AE version that saved it."""
         start = getattr(self, "_prefs", {}).get("aep_last_dir", "") or ""
         if not (start and os.path.isdir(start)):
             start = os.path.expanduser("~")
         sel = filedialog.askopenfilename(
-            title="Select After Effects Project",
+            title="Select After Effects Project or Preset",
             initialdir=start,
-            filetypes=[("After Effects Project", "*.aep"),
+            filetypes=[("After Effects files", "*.aep *.ffx"),
+                       ("After Effects Project", "*.aep"),
+                       ("After Effects Preset", "*.ffx"),
                        ("All files", "*.*")])
         if not sel:
             return
@@ -740,13 +745,14 @@ class UiSplitsMixin:
         except Exception:
             pass
         self.aep_src_lbl.configure(text=os.path.basename(sel))
-        self.aep_src_ver_lbl.configure(text="Reading project version...")
+        self.aep_src_ver_lbl.configure(text="Reading file version...")
         self._refresh_aep_dest_label()
         self._start_worker(self._aep_read_version_worker)
 
     def _aep_read_version_worker(self):
         """Read the source version off the worker thread; marshal to UI."""
-        import aep_convert  # local module; py_aep itself stays optional
+        # local module; py_aep itself stays optional (presets never need it)
+        import aep_convert  # local module
         path = self.aep_src_path
         try:
             ver = aep_convert.read_version(path)
@@ -827,7 +833,7 @@ class UiSplitsMixin:
         if getattr(self, "aep_busy", False):
             return
         if not getattr(self, "aep_src_path", ""):
-            self.show_toast("Pick an .aep file first.", "warning")
+            self.show_toast("Pick a project or preset first.", "warning")
             return
         year = self._aep_target_year()
         self.aep_busy = True
@@ -859,7 +865,7 @@ class UiSplitsMixin:
         self.aep_busy = False
         try:
             self.aep_convert_btn.configure(state="normal",
-                                           text="Convert Project")
+                                           text="Convert File")
             self.aep_progress.set(1.0)
         except Exception:
             pass
@@ -874,14 +880,14 @@ class UiSplitsMixin:
                         "success")
         self._show_success_dialog(
             "Conversion Complete",
-            "Your project now opens in AE %d.\nSaved as:\n%s"
+            "Your file now opens in AE %d.\nSaved as:\n%s"
             % (result["year"], result["out_path"]))
 
     def _aep_convert_failed(self, message):
         self.aep_busy = False
         try:
             self.aep_convert_btn.configure(state="normal",
-                                           text="Convert Project")
+                                           text="Convert File")
             self.aep_progress.set(0.0)
         except Exception:
             pass
