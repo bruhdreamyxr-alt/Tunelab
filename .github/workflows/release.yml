@@ -165,44 +165,33 @@ jobs:
             Installed copies check this Release automatically and update
             themselves.
 
-            ## What's new in 2.6.0
+            ## What's new in 2.6.1
 
-            ### AEP Version Converter tab (new)
-            Convert After Effects project files (.aep) to any version from
-            2022 through 2026. Pick a file, see the version it was saved with,
-            choose a target year, and convert — the original is never touched.
-            Damaged files and non-project files are refused with a plain
-            explanation. Animation presets (.ffx) work too, converted the same
-            way. The tab remembers the last folder used and shows the full
-            route (`AE 2026 -> AE 2024: name_AE2024.aep`) once the source
-            version is known.
+            ### The update banner is visible again (fix)
+            In 2.6.0 the startup update offer rendered as an empty strip:
+            the banner's builder moved modules and the frame's pack() call
+            was left behind, so the buttons existed but nothing showed.
+            Restored, with a test that pins the layout itself rather than
+            the button text.
 
-            ### Update notices that don't interrupt
-            The "Update Available" pop-up is now an inline banner between the
-            header and the pages. It carries the same choice — Update now or
-            Later — but waits instead of blocking: a download in flight can
-            finish first. The confirmation dialog now only promises the
-            Windows admin prompt when this machine actually needs it
-            (per-user installs update with no prompt).
+            ### Skip this version
+            The banner now carries a third answer — Skip this version. The
+            daily startup check goes quiet for exactly that version and
+            speaks up again when a newer one ships. **Check for App
+            Updates** still offers it whenever you ask directly.
 
-            ### Faster startup and sidebar
-            Pages other than the Downloader now build on first visit instead
-            of all upfront, so the window appears sooner. Sidebar rows that
-            are already correct are no longer repainted (ten idle repaints
-            went from ~380 widget updates to almost none), so page switches
-            and rail hovers feel instant.
+            ### See what's changing before you update
+            The banner now shows the release notes under a "What's new"
+            expander — a trimmed preview by default, the full changelog one
+            click away.
 
-            ### Quieter interface
-            Scrollbars now rest invisible in their own well and only show the
-            handle when the pointer reaches them — dragging and wheel
-            scrolling work the whole time. History search waits 150ms while
-            typing and pages at 75 rows with a Show all button.
-
-            ### Under the hood
-            Theme switching replays remembered widget roles instead of
-            re-scanning every widget; the checker configuration is committed
-            (`pyrightconfig.json`) so type checks run clean from a fresh
-            clone; the contrast audit follows the palettes into their new
-            module so it cannot silently stop checking.
+            ### Smaller
+            * Update checks log the remote and local versions on every
+              outcome, so a recurring-update report can be diagnosed from
+              the log instead of guessed at.
+            * The history count says "12 of 240 entries" while a search
+              filters, instead of a bare "12".
+            * Queue rows mark a truncated title with an ellipsis, so a cut
+              is distinguishable from the whole name.
 
 # Google Drive is being retired rather than mirrored to - see RELEASE.md.

@@ -43,8 +43,8 @@ fix. If you see that error, either bump `version.py` or re-tag.
 
 | File | Who it is for |
 |---|---|
-| `mysetup260.exe` | Windows installer — a fresh install |
-| `UniversalAudioStudio_2.6.0_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
+| `mysetup261.exe` | Windows installer — a fresh install |
+| `UniversalAudioStudio_2.6.1_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
 
 The macOS build was removed, so a Release now carries Windows files only.
 

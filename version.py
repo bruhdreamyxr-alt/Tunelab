@@ -7,9 +7,14 @@
 # aborts the install partway, and the package writes the updater first so a
 # partial update still leaves the fixed one behind.
 #
-# 2.6.0 is the current release: the AEP Version Converter tab (projects and
-# presets, 2022-2026), lazy page builds, the inline update banner, and an
-# update confirmation that only promises the admin prompt when this machine
+# 2.6.0 is the AEP Version Converter release (projects and presets,
+# 2022-2026), lazy page builds, the inline update banner, and an update
+# confirmation that only promises the admin prompt when this machine
 # actually needs it.
+#
+# 2.6.1 is a fix release: 2.6.0's startup banner rendered as an empty strip
+# (the builder moved to ui_widgets.py and left the frame's pack() behind).
+# It also adds "Skip this version" to the banner and shows the release
+# notes inline, so an update can be judged before it is taken.
 
-__version__ = "2.6.0"
+__version__ = "2.6.1"
