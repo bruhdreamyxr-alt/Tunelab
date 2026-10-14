@@ -50,12 +50,28 @@ jobs:
       # nearly every test in the suite builds a real window, so without this
       # the job would fail at construction rather than testing anything.
       - name: Run the test suite
+        env:
+          # A fatal signal (SIGILL from a native extension, a hard crash in
+          # Tk) normally kills Python without saying where. With the fault
+          # handler on, the dying thread's traceback lands in stderr first.
+          PYTHONFAULTHANDLER: "1"
         run: |
+          # tee keeps the output alive through a hard crash, and the grep
+          # below re-publishes the failure as annotations: job logs need an
+          # API token to read, annotations do not - "exit code 132" on its
+          # own cannot be diagnosed from outside the runner.
+          set +e
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a python -m unittest discover -s tests
+            xvfb-run -a python -m unittest discover -s tests 2>&1 | tee suite.log
           else
-            python -m unittest discover -s tests
+            python -m unittest discover -s tests 2>&1 | tee suite.log
           fi
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E '^(FAIL|ERROR):|AssertionError|Ran [0-9]+ tests|FAILED|Fatal Python error|Current thread|File "' suite.log \
+              | tail -n 15 | sed 's/^/::error::/' || true
+          fi
+          exit "$code"
         shell: bash
 
       - name: Run the UI probes
