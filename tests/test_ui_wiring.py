@@ -2999,8 +2999,12 @@ class UpdateBannerTests(unittest.TestCase):
     def test_the_startup_offer_stays_silent_on_a_skipped_version(self):
         self.addCleanup(self.app._set_pref, "skipped_version", "")
         self.app._set_pref("skipped_version", "2.6.0")
-        self.app._offer_startup_update(
-            "2.5.0", {"version": "2.6.0", "body": "notes"})
+        # Force the Windows path: on Linux self_update_supported() is False
+        # and the offer returns through the macOS branch before the skip
+        # check is ever reached, which would pass for the wrong reason.
+        with mock.patch("updater.self_update_supported", return_value=True):
+            self.app._offer_startup_update(
+                "2.5.0", {"version": "2.6.0", "body": "notes"})
         self.app.update_idletasks()
         self.assertFalse(self.app._update_banner.winfo_manager())
 
@@ -3009,8 +3013,9 @@ class UpdateBannerTests(unittest.TestCase):
         """Skip silences one version, not the updater forever."""
         self.addCleanup(self.app._set_pref, "skipped_version", "")
         self.app._set_pref("skipped_version", "2.6.0")
-        self.app._offer_startup_update(
-            "2.5.0", {"version": "2.6.1", "body": "notes"})
+        with mock.patch("updater.self_update_supported", return_value=True):
+            self.app._offer_startup_update(
+                "2.5.0", {"version": "2.6.1", "body": "notes"})
         self.app.update_idletasks()
         self.assertTrue(self.app._update_banner.winfo_manager())
 
