@@ -7,6 +7,9 @@
 # aborts the install partway, and the package writes the updater first so a
 # partial update still leaves the fixed one behind.
 #
-# 2.5.0 is the current release.
+# 2.6.0 is the current release: the AEP Version Converter tab (projects and
+# presets, 2022-2026), lazy page builds, the inline update banner, and an
+# update confirmation that only promises the admin prompt when this machine
+# actually needs it.
 
-__version__ = "2.5.0"
+__version__ = "2.6.0"

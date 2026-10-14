@@ -2752,8 +2752,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             return
 
         # Non-blocking: the banner states the same thing the modal did, minus
-        # the interruption. The install note that mattered ("Windows will ask
-        # for admin, the app relaunches") is in the banner text now.
+        # the interruption. The banner keeps to what is always true (the app
+        # closes and relaunches); the confirmation dialog then spells out
+        # whether this machine needs the admin prompt.
         self._show_update_banner(local_ver, remote_ver,
                                  on_accept=self.check_for_app_updates)
 

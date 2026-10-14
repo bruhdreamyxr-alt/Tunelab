@@ -2945,6 +2945,31 @@ class UpdateBannerTests(unittest.TestCase):
             self.app.update_idletasks()
         self.assertEqual(len(self._buttons()), 2)
 
+    def _banner_text(self):
+        banner = self.app._update_banner
+        return " ".join(
+            str(c.cget("text"))
+            for w in banner.winfo_children()
+            for c in w.winfo_children()
+            if isinstance(c, ctk.CTkLabel))
+
+    @requires_ctk
+    def test_the_banner_promises_only_what_is_always_true(self):
+        """No blanket admin claim: per-user installs need no UAC prompt."""
+        self.app._show_update_banner("2.5.0", "2.6.0")
+        self.app.update_idletasks()
+        text = self._banner_text()
+        self.assertIn("relaunches", text)
+        self.assertNotIn("admin", text.lower())
+        self.assertNotIn("UAC", text)
+
+    def test_the_confirmation_explains_the_prompt_per_machine(self):
+        """The dialog probes writability, so the wording matches the install."""
+        source = (_REPO / "ui_widgets.py").read_text(encoding="utf-8")
+        self.assertIn("_update_probe.tmp", source)
+        self.assertIn("The app will update and relaunch automatically.",
+                      source)
+
     def test_the_startup_offer_no_longer_opens_a_modal(self):
         """The whole point: nothing blocks the user out of the app."""
         self.assertNotIn("messagebox.askyesno", _method_source(

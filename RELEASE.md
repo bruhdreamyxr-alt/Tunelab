@@ -43,8 +43,8 @@ fix. If you see that error, either bump `version.py` or re-tag.
 
 | File | Who it is for |
 |---|---|
-| `mysetup250.exe` | Windows installer — a fresh install |
-| `UniversalAudioStudio_2.5.0_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
+| `mysetup260.exe` | Windows installer — a fresh install |
+| `UniversalAudioStudio_2.6.0_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
 
 The macOS build was removed, so a Release now carries Windows files only.
 
@@ -55,7 +55,8 @@ The macOS build was removed, so a Release now carries Windows files only.
 `updater.py` asks the public GitHub Releases API for the newest published
 Release, compares its version against the running app's, and when it is newer
 downloads the `_update.zip` from that Release and installs it in place (Windows
-shows a UAC prompt, because the app lives under `Program Files`). That happens
+shows a UAC prompt when the app lives under `Program Files`; per-user
+installs update with no prompt). That happens
 once at startup and whenever **Check for App Updates** is pressed.
 
 There is no manifest to maintain and no upload step: the Release you published

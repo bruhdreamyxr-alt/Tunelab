@@ -41,9 +41,10 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
     answer only mattered because the question was a button. Inline, the same
     choice waits without blocking - someone mid-download can finish first.
 
-    The install caveat that used to live in the dialog text is kept here,
-    because it is the part that actually changes someone's decision: Windows
-    shows a UAC prompt and the app relaunches itself.
+    The text states only what is always true: installing closes the app and
+    relaunches it. Whether Windows shows an admin prompt depends on where the
+    app is installed (per-user installs need none), and the confirmation
+    dialog the button leads to spells that out for this machine.
     """
     body = ctk.CTkFrame(parent, fg_color="transparent")
     accent = palette.get("accent", UITheme.COLOR_PRIMARY)
@@ -54,8 +55,7 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
     ctk.CTkLabel(
         body,
         text=f"Update available: {local_ver} → {remote_ver}. Installing "
-             f"closes the app and relaunches it, and Windows will ask "
-             f"for admin.",
+             f"closes the app and relaunches it.",
         font=UITheme.F(11), anchor="w", justify="left",
         text_color=palette.get("text", "#ecf0f1"),
     ).pack(side="left", fill="x", expand=True)
@@ -369,16 +369,37 @@ class UiSplitsMixin:
                 return
 
 
-            # Update available -- confirm with the user.
+            # Update available -- confirm with the user. The install note tells
+            # the truth about the UAC prompt: updater.launch_updater only needs
+            # elevation when the install directory is not writable (a per-user
+            # install updates with no prompt at all).
+            install_dir = os.path.dirname(os.path.abspath(sys.executable))
+            probe = os.path.join(install_dir, "_update_probe.tmp")
+            try:
+                with open(probe, "w", encoding="utf-8") as fh:
+                    fh.write("probe")
+                os.remove(probe)
+                needs_admin = False
+            except OSError:
+                needs_admin = True
+            install_note = (
+                "The app will close automatically when the update is ready, "
+                "then relaunch itself.\n\n"
+                + (
+                    "Because this app is installed under 'C:\\Program Files', "
+                    "Windows will show an admin (UAC) prompt when installing. "
+                    "Click Yes, and the app will update and relaunch "
+                    "automatically."
+                    if needs_admin else
+                    "The app will update and relaunch automatically."
+                )
+            )
             msg = (
                 f"A new version is available:\n\n"
                 f"  Current: {local_ver}\n"
                 f"  Latest:  {remote_ver}\n\n"
                 f"Do you want to download and install it now?\n"
-                f"The app will close automatically when the update is ready.\n\n"
-                f"Because this app is installed under 'C:\\Program Files', "
-                f"Windows will show an admin (UAC) prompt when installing. "
-                f"Click Yes, and the app will update and relaunch automatically."
+                f"{install_note}"
             )
 
             import threading

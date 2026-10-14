@@ -165,4 +165,44 @@ jobs:
             Installed copies check this Release automatically and update
             themselves.
 
+            ## What's new in 2.6.0
+
+            ### AEP Version Converter tab (new)
+            Convert After Effects project files (.aep) to any version from
+            2022 through 2026. Pick a file, see the version it was saved with,
+            choose a target year, and convert — the original is never touched.
+            Damaged files and non-project files are refused with a plain
+            explanation. Animation presets (.ffx) work too, converted the same
+            way. The tab remembers the last folder used and shows the full
+            route (`AE 2026 -> AE 2024: name_AE2024.aep`) once the source
+            version is known.
+
+            ### Update notices that don't interrupt
+            The "Update Available" pop-up is now an inline banner between the
+            header and the pages. It carries the same choice — Update now or
+            Later — but waits instead of blocking: a download in flight can
+            finish first. The confirmation dialog now only promises the
+            Windows admin prompt when this machine actually needs it
+            (per-user installs update with no prompt).
+
+            ### Faster startup and sidebar
+            Pages other than the Downloader now build on first visit instead
+            of all upfront, so the window appears sooner. Sidebar rows that
+            are already correct are no longer repainted (ten idle repaints
+            went from ~380 widget updates to almost none), so page switches
+            and rail hovers feel instant.
+
+            ### Quieter interface
+            Scrollbars now rest invisible in their own well and only show the
+            handle when the pointer reaches them — dragging and wheel
+            scrolling work the whole time. History search waits 150ms while
+            typing and pages at 75 rows with a Show all button.
+
+            ### Under the hood
+            Theme switching replays remembered widget roles instead of
+            re-scanning every widget; the checker configuration is committed
+            (`pyrightconfig.json`) so type checks run clean from a fresh
+            clone; the contrast audit follows the palettes into their new
+            module so it cannot silently stop checking.
+
 # Google Drive is being retired rather than mirrored to - see RELEASE.md.
