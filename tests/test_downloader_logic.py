@@ -73,21 +73,61 @@ class LazyOptionalDependencyTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             downloader.definitely_not_a_real_attribute
 
+    def _fake_dsp_import(self, side_effect):
+        """Patch importlib.import_module for one _dsp_backends() call.
+
+        The real pedalboard wheel dies with SIGILL - an uncatchable fatal
+        signal, so no except clause in _dsp_backends helps - while its native
+        module loads on some CI hosts, which is what blacked out the ubuntu
+        job for five straight pushes. What these tests pin is _dsp_backends'
+        own resolve-or-degrade and caching logic, not the wheel, so the
+        import is faked here.
+        """
+        downloader._optional_modules.pop('pedalboard_dsp', None)
+        self.addCleanup(downloader._optional_modules.pop,
+                        'pedalboard_dsp', None)
+        return mock.patch.object(downloader.importlib, 'import_module',
+                                 side_effect=side_effect)
+
     def test_the_dsp_trio_is_all_or_nothing(self):
         """process_studio_dsp checks all three before using any of them.
 
         Returning a partial trio would turn the "install pedalboard" message
         into an AttributeError somewhere deeper in the DSP path.
         """
-        audio_file, pedalboard_cls, reverb = downloader._dsp_backends()
-        self.assertEqual(
-            [audio_file is None, pedalboard_cls is None, reverb is None].count(True),
-            0 if audio_file is not None else 3,
-        )
+        board = mock.Mock(Pedalboard=object, Reverb=object)
+        io = mock.Mock(AudioFile=object)
+
+        def _present(name, *args, **kwargs):
+            if name == 'pedalboard':
+                return board
+            if name == 'pedalboard.io':
+                return io
+            raise ImportError(name)
+
+        with self._fake_dsp_import(_present):
+            trio = downloader._dsp_backends()
+        self.assertEqual([m is None for m in trio].count(True), 0,
+                         "a resolvable wheel must yield all three classes")
+
+        def _absent(name, *args, **kwargs):
+            raise ImportError(name)
+
+        downloader._optional_modules.pop('pedalboard_dsp', None)
+        with self._fake_dsp_import(_absent):
+            trio = downloader._dsp_backends()
+        self.assertEqual([m is None for m in trio].count(True), 3,
+                         "an unimportable wheel must degrade to all None")
 
     def test_the_cache_returns_the_same_object_every_time(self):
         self.assertIs(downloader._mod_yt_dlp(), downloader._mod_yt_dlp())
-        self.assertIs(downloader._dsp_backends(), downloader._dsp_backends())
+
+        def _present(name, *args, **kwargs):
+            return mock.Mock()
+
+        with self._fake_dsp_import(_present):
+            self.assertIs(downloader._dsp_backends(),
+                          downloader._dsp_backends())
 
     def test_a_missing_dependency_degrades_to_none(self):
         """An unimportable module must resolve to None, not blow up."""
