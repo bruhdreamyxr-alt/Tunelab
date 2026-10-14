@@ -199,6 +199,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             # dialog restarts in the working directory every time, and
             # project files almost always live in one folder.
             "aep_last_dir": "",
+            # Version the user pressed "Skip this version" on ("" = none).
+            # Declared because _load_prefs keeps only keys in this table: a
+            # written-but-undeclared key is dropped on the next launch, which
+            # would turn a permanent skip back into tomorrow's nag.
+            "skipped_version": "",
         }
 
     def _load_prefs(self) -> dict:
@@ -1475,14 +1480,20 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         # less than the app already knew. A pending item has no title yet, and
         # the URL it was pasted as is the only honest thing to show.
         title = str(getattr(item, "title", "") or "").strip()
+
+        def _clip(text, n):
+            # A hard cut reads as the whole title; the ellipsis says the row
+            # is only showing the head of it.
+            return text if len(text) <= n else text[:n - 1] + "…"
+
         # Show progress hint for the active item (e.g. "▶ [ACTIVE] 45% ...").
         if idx == active_idx and item.status == "active":
             progress = getattr(item, '_progress', None)
             pct = f" {int(progress*100)}%" if progress is not None else ""
             subject = title or item.url
-            return f"{icon} [ACTIVE]{pct} {subject[:45]}"
+            return f"{icon} [ACTIVE]{pct} {_clip(subject, 45)}"
         subject = title or item.url
-        return f"{icon} [{item.status.upper():>9}] {subject[:50]}"
+        return f"{icon} [{item.status.upper():>9}] {_clip(subject, 50)}"
 
     def _rebuild_queue_list(self):
         lb = self.queue_rows
@@ -1776,6 +1787,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
                 history = self._queue_manager.get_history()
             except Exception:
                 history = []
+        total_all = len(history)
 
         # Apply search filter. A visible placeholder is stored in the same
         # StringVar as real input (customtkinter inserts it straight into the
@@ -1824,7 +1836,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         for w in self._history_entries_frame.winfo_children():
             w.destroy()
 
-        self.history_count_lbl.configure(text=f"{len(history)} entries")
+        # With a query active the label says "12 of 240 entries": a bare "12"
+        # reads like the history shrank rather than like a filter is on.
+        if query and total_all != len(history):
+            self.history_count_lbl.configure(
+                text=f"{len(history)} of {total_all} entries")
+        else:
+            self.history_count_lbl.configure(text=f"{len(history)} entries")
 
         # Only offer the prune when there is something to prune, and count from
         # the unfiltered list so a search box cannot make a missing file look
@@ -1854,13 +1872,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
         # it; a query narrows the list, which is also why a search resets the
         # cap even when its text matches what's already shown.
         _HISTORY_PAGE = 75
-        limit = _HISTORY_PAGE if not query else len(history)
-        try:
-            if query or getattr(self, "_history_show_all", False):
-                limit = len(history)
-            else:
-                limit = _HISTORY_PAGE
-        except Exception:
+        if query or getattr(self, "_history_show_all", False):
+            limit = len(history)
+        else:
             limit = _HISTORY_PAGE
         shown = history[:limit]
         for idx, entry in enumerate(shown):
@@ -2702,12 +2716,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             logger.debug("Could not hide the update banner", exc_info=True)
 
     def _show_update_banner(self, local_ver: str, remote_ver: str,
-                            on_accept=None) -> None:
+                            on_accept=None, release_notes: str = "") -> None:
         """Offer an available update inline instead of in a modal dialog.
 
         The widgets are built by ui_widgets.build_update_banner; this only
         decides when they exist. Never stacks: a second update found while the
         first is up refreshes the text in place rather than adding a row.
+
+        Besides the accept/later pair the banner carries "Skip this version":
+        declining a version should silence it until a newer one ships, not
+        re-ask every launch. *release_notes* fills the inline "What's new"
+        expander so the offer can be judged instead of trusted.
         """
         try:
             banner = self._update_banner
@@ -2718,16 +2737,28 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
                 self._hide_update_banner()
                 self.show_toast("Update reminder dismissed.", "info", 2500)
 
+            def _skip():
+                # skipped_version is a declared default pref - _load_prefs
+                # keeps only declared keys, so without that declaration this
+                # write would vanish on the next launch and the nag would
+                # return the day after.
+                self._set_pref("skipped_version", str(remote_ver))
+                self._hide_update_banner()
+                self.show_toast(f"v{remote_ver} won't be offered again.",
+                                "info", 3000)
+
             def _accept():
                 self._hide_update_banner()
                 if on_accept is not None:
                     on_accept()
 
-            now, later = build_update_banner(
+            now, later, skip = build_update_banner(
                 banner, getattr(self, "_palette", {}) or {},
-                local_ver, remote_ver, on_accept=_accept, on_later=_later)
+                local_ver, remote_ver, on_accept=_accept, on_later=_later,
+                on_skip=_skip, release_notes=release_notes)
             self._style_button(now, "primary", bordered=True)
             self._style_button(later, "secondary", bordered=True)
+            self._style_button(skip, "ghost", bordered=True)
 
             banner.pack(fill="x", padx=12, pady=(8, 0), before=self.content_frame)
             self._update_banner_set = True
@@ -2751,12 +2782,24 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin):
             self._offer_macos_download(local_ver, release)
             return
 
+        # A version the user explicitly skipped stays skipped until a newer
+        # one ships: the point of the button is to end the daily re-nag, not
+        # to delay it by one launch. The manual "Check for App Updates"
+        # button deliberately ignores this - asking directly is not a nag.
+        skipped = str((getattr(self, "_prefs", None) or {}).get(
+            "skipped_version", "") or "")
+        if skipped and skipped == str(remote_ver):
+            logger.debug("Not re-offering skipped update v%s", remote_ver)
+            return
+
         # Non-blocking: the banner states the same thing the modal did, minus
         # the interruption. The banner keeps to what is always true (the app
         # closes and relaunches); the confirmation dialog then spells out
-        # whether this machine needs the admin prompt.
+        # whether this machine needs the admin prompt. The release notes ride
+        # along so the offer can be judged rather than trusted.
         self._show_update_banner(local_ver, remote_ver,
-                                 on_accept=self.check_for_app_updates)
+                                 on_accept=self.check_for_app_updates,
+                                 release_notes=str((release or {}).get("body") or ""))
 
 
     def _do_self_restart(self):

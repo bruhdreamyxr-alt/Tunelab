@@ -141,5 +141,39 @@ class ManifestCliTests(unittest.TestCase):
         self.assertEqual(json.loads(buffer.getvalue())["version"], "2.1.0")
 
 
+class RemoteUpdateInfoTests(unittest.TestCase):
+    """The daily check must leave evidence a recurring-nag report can use."""
+
+    @staticmethod
+    def _release(body=None):
+        payload = {
+            "tag_name": "v9.9.9",
+            "assets": [
+                {"name": "UniversalAudioStudio_9.9.9_update.zip",
+                 "browser_download_url": "https://example.test/update.zip"},
+            ],
+        }
+        if body is not None:
+            payload["body"] = body
+        return payload
+
+    def test_update_info_carries_a_checked_at_stamp(self):
+        with mock.patch.object(updater, "_request_json",
+                               return_value=self._release()):
+            info = updater.get_remote_update_info()
+        assert info is not None
+        self.assertEqual(info["version"], "9.9.9")
+        self.assertGreater(info["checked_at"], 0)
+
+    def test_the_release_body_reaches_the_caller(self):
+        """The notes were fetched from GitHub and then dropped at this
+        boundary - which is why the update offer could not show them."""
+        with mock.patch.object(updater, "_request_json",
+                               return_value=self._release("Shipped notes.")):
+            release = updater.get_remote_release()
+        assert release is not None
+        self.assertEqual(release["body"], "Shipped notes.")
+
+
 if __name__ == "__main__":
     unittest.main()

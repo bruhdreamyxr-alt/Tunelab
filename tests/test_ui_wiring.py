@@ -414,7 +414,7 @@ class QueueRowLabelTests(unittest.TestCase):
         item._progress = 0.45
         self.assertEqual(
             self.app._queue_row_label(0, item, 0),
-            "▶ [ACTIVE] 45% " + url[:45],
+            "▶ [ACTIVE] 45% " + url[:44] + "…",
         )
 
     def test_active_row_without_progress_omits_the_percentage(self):
@@ -430,8 +430,15 @@ class QueueRowLabelTests(unittest.TestCase):
         item = SimpleNamespace(status="pending", url=url)
         self.assertEqual(
             self.app._queue_row_label(3, item, 0),
-            "○ [  PENDING] " + url[:50],
+            "○ [  PENDING] " + url[:49] + "…",
         )
+
+    def test_a_row_cut_short_of_the_limit_is_left_whole(self):
+        """Truncation marks the cut; a row that fits must not grow a mark."""
+        item = SimpleNamespace(status="pending", url="https://example.com/x")
+        label = self.app._queue_row_label(0, item, -1)
+        self.assertIn("https://example.com/x", label)
+        self.assertNotIn("…", label)
 
     def test_unknown_status_gets_the_placeholder_icon(self):
         item = SimpleNamespace(status="weird", url="u")
@@ -2914,7 +2921,8 @@ class UpdateBannerTests(unittest.TestCase):
         self.app._show_update_banner("2.5.0", "2.6.0")
         self.app.update_idletasks()
         self.assertTrue(self.app._update_banner.winfo_manager())
-        self.assertEqual(set(self._buttons()), {"Update now", "Later"})
+        self.assertEqual(set(self._buttons()),
+                         {"Update now", "Later", "Skip this version"})
 
     @requires_ctk
     def test_update_now_runs_the_callback_and_gets_out_of_the_way(self):
@@ -2943,7 +2951,7 @@ class UpdateBannerTests(unittest.TestCase):
         for _ in range(3):
             self.app._show_update_banner("2.5.0", "2.6.0")
             self.app.update_idletasks()
-        self.assertEqual(len(self._buttons()), 2)
+        self.assertEqual(len(self._buttons()), 3)
 
     def _banner_text(self):
         banner = self.app._update_banner
@@ -2976,6 +2984,70 @@ class UpdateBannerTests(unittest.TestCase):
             "_offer_startup_update"))
         self.assertIn("_show_update_banner", _method_source(
             "_offer_startup_update"))
+
+    @requires_ctk
+    def test_skip_records_the_version_and_clears_the_banner(self):
+        self.addCleanup(self.app._set_pref, "skipped_version", "")
+        self.app._show_update_banner("2.5.0", "2.6.0")
+        self.app.update_idletasks()
+        self._buttons()["Skip this version"].invoke()
+        self.app.update()
+        self.assertEqual(self.app._prefs.get("skipped_version"), "2.6.0")
+        self.assertFalse(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_the_startup_offer_stays_silent_on_a_skipped_version(self):
+        self.addCleanup(self.app._set_pref, "skipped_version", "")
+        self.app._set_pref("skipped_version", "2.6.0")
+        self.app._offer_startup_update(
+            "2.5.0", {"version": "2.6.0", "body": "notes"})
+        self.app.update_idletasks()
+        self.assertFalse(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_a_newer_version_still_offers_after_a_skip(self):
+        """Skip silences one version, not the updater forever."""
+        self.addCleanup(self.app._set_pref, "skipped_version", "")
+        self.app._set_pref("skipped_version", "2.6.0")
+        self.app._offer_startup_update(
+            "2.5.0", {"version": "2.6.1", "body": "notes"})
+        self.app.update_idletasks()
+        self.assertTrue(self.app._update_banner.winfo_manager())
+
+    @requires_ctk
+    def test_the_offer_shows_its_body_frame_so_it_is_actually_visible(self):
+        """The builder moved to ui_widgets and silently lost body.pack()."""
+        self.app._show_update_banner("2.5.0", "2.6.0")
+        self.app.update_idletasks()
+        children = self.app._update_banner.winfo_children()
+        self.assertTrue(children, "the banner built no body frame")
+        self.assertTrue(all(c.winfo_manager() for c in children),
+                        "body frame never packed: the banner renders empty")
+
+    @requires_ctk
+    def test_release_notes_are_shown_inline_not_withheld(self):
+        def _all_labels(widget):
+            out = []
+            for child in widget.winfo_children():
+                if isinstance(child, ctk.CTkLabel):
+                    out.append(str(child.cget("text")))
+                out.extend(_all_labels(child))
+            return out
+
+        self.app._show_update_banner(
+            "2.5.0", "2.6.0",
+            release_notes="Fixed the daily update nag.")
+        self.app.update_idletasks()
+        self.assertIn("Fixed the daily update nag.",
+                      " ".join(_all_labels(self.app._update_banner)))
+
+    def test_long_release_notes_are_trimmed_for_the_preview(self):
+        from ui_widgets import _shorten_release_notes
+        long = "\n".join(f"change number {i}" for i in range(80))
+        preview = _shorten_release_notes(long, limit=100)
+        self.assertLess(len(preview), len(long))
+        self.assertIn("...", preview)
+        self.assertEqual(_shorten_release_notes("short note"), "short note")
 
 
 if __name__ == "__main__":

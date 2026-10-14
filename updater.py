@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 
 from version import __version__ as CURRENT_VERSION
@@ -203,6 +204,11 @@ def _parse_release(data):
         "version": version,
         "download_url": _pick_update_asset(data.get("assets")),
         "assets": assets,
+        "published_at": str(data.get("published_at") or ""),
+        # Release notes, fetched all along but discarded at this boundary -
+        # so users were asked to update blind. Surfaced in the banner's
+        # "What's new" expander.
+        "body": str(data.get("body") or ""),
     }
 
 
@@ -229,12 +235,31 @@ def get_remote_release(require_update_package=False):
     or a malformed response. This is the unauthenticated public endpoint, so no
     token ships inside the app; it allows 60 requests an hour per address, far
     more than an app checking once a day needs.
+
+    Every outcome is logged with local and remote versions. Those lines are the
+    standing diagnosis for a recurring-nag report ("it asks me to update every
+    day even though it installs"): if the log shows the install completing but
+    the next check still offering the same version, either the running copy
+    never moved forward or the Release never moved forward.
     """
     release = _parse_release(_request_json(GITHUB_RELEASES_API))
     if release is None:
-        logger.warning("Could not read a usable release from %s", GITHUB_RELEASES_API)
+        logger.warning("Could not read a usable release from %s (local=%s)",
+                       GITHUB_RELEASES_API, CURRENT_VERSION)
         return None
     if release["download_url"] or not require_update_package:
+        logger.debug("Update check: remote=%s local=%s usable=%s.",
+                     release["version"], CURRENT_VERSION,
+                     bool(release["download_url"]))
+        if (not is_newer_version(release["version"])
+                and release["version"] == CURRENT_VERSION):
+            # Same version, newest usable Release: this is the healthy state
+            # and also exactly what a stuck updater looks like. Log it at
+            # info so a daily-nag report can be answered from the log alone:
+            # if the check keeps offering this same version, either the
+            # running copy never advanced or the Release never did.
+            logger.info("Update check: already on newest usable release %s.",
+                        release["version"])
         return release
 
     logger.warning(
@@ -309,8 +334,19 @@ def get_remote_update_info():
     """
     release = get_remote_release(require_update_package=True)
     if release and release.get("download_url"):
-        return {"version": release["version"],
-                "download_url": release["download_url"]}
+        info = {"version": release["version"],
+                "download_url": release["download_url"],
+                # Wall-clock stamp of this check. A "it asks me every day"
+                # report needs to show *when* the app last asked alongside
+                # what it was told - without this, a log line cannot prove
+                # whether checks are repeating or spaced a day apart.
+                "checked_at": time.time()}
+        logger.debug("Update info: remote=%s local=%s checked_at=%.0f",
+                     info["version"], CURRENT_VERSION, info["checked_at"])
+        return info
+    logger.info("No usable update package this check (local=%s remote=%s)",
+                CURRENT_VERSION,
+                (release or {}).get("version", "none"))
     return None
 
 

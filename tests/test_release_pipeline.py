@@ -129,10 +129,12 @@ class RemoteUpdateInfoTests(unittest.TestCase):
         with mock.patch.object(updater, "_request_json",
                                return_value=_release_payload()):
             info = updater.get_remote_update_info()
-        self.assertEqual(info, {
-            "version": "2.1.0",
-            "download_url": "https://example.invalid/update.zip",
-        })
+        assert info is not None
+        self.assertEqual(info["version"], "2.1.0")
+        self.assertEqual(info["download_url"],
+                         "https://example.invalid/update.zip")
+        # A wall-clock stamp: type-checked, never value-checked.
+        self.assertIsInstance(info["checked_at"], float)
 
     def test_asks_github_for_the_latest_release(self):
         with mock.patch.object(updater, "_request_json",
@@ -166,7 +168,7 @@ class RemoteUpdateInfoTests(unittest.TestCase):
                                return_value=_release_payload()):
             info = updater.get_remote_update_info()
         assert info is not None  # the fixture payload is always usable
-        self.assertEqual(set(info), {"version", "download_url"})
+        self.assertEqual(set(info), {"version", "download_url", "checked_at"})
 
 
 class DriveRetiredTests(unittest.TestCase):

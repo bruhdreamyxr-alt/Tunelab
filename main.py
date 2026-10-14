@@ -11,7 +11,7 @@ import ctypes
 import logging
 import os
 import sys
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("universal_audio_studio.main")
 
@@ -81,10 +81,13 @@ def _focus_running_instance() -> bool:
     return False
 
 
-def run(main_window_factory: Optional[callable] = None) -> None:
+def run(main_window_factory: Optional[Callable[[], Any]] = None) -> None:
     """Start the app. Imports ui lazily so the import cost lands here, once."""
     if main_window_factory is None:
-        from ui import UniversalAudioStudio as main_window_factory
+        # Bound via assignment (not `import ... as main_window_factory`) so
+        # the type checker can see the None branch is gone before the call.
+        from ui import UniversalAudioStudio
+        main_window_factory = UniversalAudioStudio
     if _focus_running_instance():
         return
     app = main_window_factory()

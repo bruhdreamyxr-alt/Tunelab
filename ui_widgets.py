@@ -27,8 +27,25 @@ from ui_theme import UITheme, _on_color, custom_palette
 logger = logging.getLogger(__name__)
 
 
+def _shorten_release_notes(body, limit=400):
+    """Trim release notes for the banner expander; the full text stays.
+
+    Keeps whole lines under *limit* characters and marks the cut, so a long
+    changelog shows its headline items without pushing the banner down the
+    page. The expander still shows the untrimmed body on demand.
+    """
+    text = str(body or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit("\n", 1)[0].strip()
+    if not cut:
+        cut = text[:limit].strip()
+    return cut + "\n... (full notes on the Release page)"
+
+
 def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
-                        on_accept=None, on_later=None) -> tuple:
+                        on_accept=None, on_later=None, on_skip=None,
+                        release_notes="") -> tuple:
     """Fill *parent* (a frame) with the in-UI update offer. Returns its buttons.
 
     Lives here rather than on the app because it is widget construction with no
@@ -45,12 +62,22 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
     relaunches it. Whether Windows shows an admin prompt depends on where the
     app is installed (per-user installs need none), and the confirmation
     dialog the button leads to spells that out for this machine.
+
+    *on_skip* adds a third "Skip this version" answer: declining a
+    version should silence it until a newer one ships, not re-ask
+    every launch. *release_notes* feeds an inline "What's new"
+    expander so the user is not asked to update blind.
     """
     body = ctk.CTkFrame(parent, fg_color="transparent")
     accent = palette.get("accent", UITheme.COLOR_PRIMARY)
 
     ctk.CTkLabel(body, text="↑", font=UITheme.F(14, "bold"),
                  text_color=accent, width=18).pack(side="left", padx=(0, 6))
+
+    # Packed, like every other widget here. When this builder moved out
+    # of ui.py the frame that holds the banner lost its pack() call and the
+    # offer silently rendered as an empty strip.
+    body.pack(fill="x")
 
     ctk.CTkLabel(
         body,
@@ -64,9 +91,48 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
                           command=on_later or (lambda: None))
     later.pack(side="right", padx=(8, 0))
 
+    skip = None
+    if on_skip is not None:
+        skip = ctk.CTkButton(body, text="Skip this version", width=130,
+                             command=on_skip)
+        skip.pack(side="right", padx=(8, 0))
+
     now = ctk.CTkButton(body, text="Update now", width=110,
                         command=on_accept or (lambda: None))
     now.pack(side="right")
+
+    if str(release_notes or "").strip():
+        try:
+            notes_box = ctk.CTkFrame(body, fg_color="transparent")
+            notes_box.pack(side="bottom", fill="x", padx=(24, 0), pady=(6, 0))
+            full = str(release_notes).strip()
+            preview = _shorten_release_notes(full)
+            notes_lbl = ctk.CTkLabel(
+                notes_box, text=preview, font=UITheme.F(10),
+                anchor="w", justify="left",
+                text_color=palette.get("sub", "#95a5a6"))
+            notes_lbl.pack(side="top", anchor="w", fill="x")
+
+            state = {"open": False}
+
+            def _toggle():
+                state["open"] = not state["open"]
+                if state["open"]:
+                    notes_lbl.configure(text=full)
+                    notes_btn.configure(text="Hide what\u2019s new \u25b2")
+                else:
+                    notes_lbl.configure(text=preview)
+                    notes_btn.configure(text="What\u2019s new \u25bc")
+
+            notes_btn = ctk.CTkButton(
+                notes_box, text="What\u2019s new \u25bc", width=130, height=22,
+                font=UITheme.F(10), command=_toggle)
+            notes_btn.pack(side="top", anchor="w", pady=(4, 0))
+        except Exception:
+            pass  # Notes are a nicety; never lose the offer over them.
+
+    if skip is not None:
+        return now, later, skip
     return now, later
 
 
