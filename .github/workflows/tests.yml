@@ -68,8 +68,13 @@ jobs:
           fi
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
+            # head first: faulthandler prints the crash frame innermost-first,
+            # so the interesting line (which test) is at the TOP of the match
+            # list - a tail-only window showed nothing but unittest boilerplate.
             grep -E '^(FAIL|ERROR):|AssertionError|Ran [0-9]+ tests|FAILED|Fatal Python error|Current thread|File "' suite.log \
-              | tail -n 15 | sed 's/^/::error::/' || true
+              | head -n 12 | sed 's/^/::error::/' || true
+            grep -E '^(FAIL|ERROR):|AssertionError|Ran [0-9]+ tests|FAILED' suite.log \
+              | tail -n 6 | sed 's/^/::error::/' || true
           fi
           exit "$code"
         shell: bash
