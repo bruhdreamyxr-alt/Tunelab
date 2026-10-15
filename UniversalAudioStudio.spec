@@ -57,6 +57,7 @@ a = Analysis(
         'pages.queue',
         'pages.history',
         'pages.updates',
+        'library_db',
         'yt_dlp',
         'yt_dlp.postprocessor.embedthumbnail',
         'yt_dlp.postprocessor.ffmpeg',

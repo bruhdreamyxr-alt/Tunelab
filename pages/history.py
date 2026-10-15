@@ -175,6 +175,32 @@ class HistoryPageMixin:
         self._history_show_all = False
         self._refresh_history_view()
 
+    def _history_entries(self):
+        """The saved history: SQLite when it answers, else the JSON file.
+
+        The library database is the long-term store (see library_db); the
+        JSON file stays the compatibility floor for fresh installs and for
+        any moment the database cannot be opened. The first call also runs
+        the one-time import of the existing JSON entries.
+        """
+        self._init_queue_manager()
+        records = []
+        if self._queue_manager:
+            try:
+                records = self._queue_manager.get_history()
+            except Exception:
+                records = []
+        try:
+            import library_db
+            library_db.ensure_migrated(records)
+            rows = library_db.entries()
+            if rows is not None:
+                return rows
+        except Exception:
+            logger.debug("Library read unavailable; using JSON history",
+                         exc_info=True)
+        return records
+
     def _refresh_history_view(self, force: bool = False):
         """Rebuild the history entry list from the saved history file.
 
@@ -183,13 +209,7 @@ class HistoryPageMixin:
         every time the tab opens, and recreating every row on each visit
         was a visible stutter.
         """
-        history = []
-        self._init_queue_manager()
-        if self._queue_manager:
-            try:
-                history = self._queue_manager.get_history()
-            except Exception:
-                history = []
+        history = self._history_entries()
         total_all = len(history)
 
         # Apply search filter. A visible placeholder is stored in the same
@@ -447,6 +467,11 @@ class HistoryPageMixin:
             return
         try:
             removed = self._queue_manager.prune_missing_history()
+            try:
+                import library_db
+                library_db.prune_missing()
+            except Exception:
+                logger.debug("Library prune skipped", exc_info=True)
         except Exception as e:
             self._show_error_dialog("Remove Missing Files",
                                     "Could not update the history.",
@@ -460,10 +485,7 @@ class HistoryPageMixin:
         """How many history entries point at a file that is gone."""
         if not self._queue_manager:
             return 0
-        try:
-            history = self._queue_manager.get_history() or []
-        except Exception:
-            return 0
+        history = self._history_entries() or []
         count = 0
         for entry in history:
             if not isinstance(entry, dict):
@@ -484,6 +506,11 @@ class HistoryPageMixin:
             return
         try:
             self._queue_manager.clear_history()
+            try:
+                import library_db
+                library_db.clear()
+            except Exception:
+                logger.debug("Library clear skipped", exc_info=True)
             self._refresh_history_view()
             self.show_toast("History cleared", "success")
         except Exception as e:

@@ -124,6 +124,28 @@ _migrate_legacy_files(APP_DATA_DIR)
 HISTORY_FILE = os.path.join(APP_DATA_DIR, "download_history.json")
 QUEUE_FILE = os.path.join(APP_DATA_DIR, "download_queue.json")
 
+# Optional second destination for history entries: the UI points this at
+# library_db.record so the SQLite library stays in step with the JSON
+# file. None by default - tests and plain module use never touch a
+# database.
+_HISTORY_SINK = None
+
+
+def set_history_sink(sink) -> None:
+    """Route history entries to *sink* in addition to the JSON file."""
+    global _HISTORY_SINK
+    _HISTORY_SINK = sink
+
+
+def _notify_history_sink(entry) -> None:
+    sink = _HISTORY_SINK
+    if sink is None:
+        return
+    try:
+        sink(entry)
+    except Exception as e:
+        logger.debug("History sink failed: %s", e)
+
 # Guard all history/queue reads/writes so the queue worker thread and the UI thread
 # can never corrupt the JSON files by writing at the same moment. Writes go to a
 # temp file and are atomically renamed into place.
@@ -460,6 +482,7 @@ class DownloadQueue:
         with _STORE_LOCK:
             try:
                 history = _read_json_file(HISTORY_FILE)
+                written = []
                 for item in self._items:
                     if item.status in ("done", "failed"):
                         entry = item.to_dict()
@@ -471,7 +494,10 @@ class DownloadQueue:
                                 break
                         else:
                             history.insert(0, entry)
+                        written.append(entry)
                 _write_json_file(HISTORY_FILE, history[:self._max_history])
+                for entry in written:
+                    _notify_history_sink(entry)
             except Exception as e:
                 logger.warning("History save failed (%s): %s", HISTORY_FILE, e)
 
@@ -501,6 +527,7 @@ class DownloadQueue:
                 else:
                     history.insert(0, entry)
                 _write_json_file(HISTORY_FILE, history[:self._max_history])
+                _notify_history_sink(entry)
             except Exception as e:
                 logger.warning("History upsert failed (%s): %s", HISTORY_FILE, e)
 

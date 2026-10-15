@@ -54,6 +54,12 @@ class QueuePageMixin:
             if restored:
                 logger.debug("Restored %d item(s) into the queue", restored)
                 self._refresh_queue_tab()
+            # Keep the SQLite library in step with every history write.
+            try:
+                import library_db
+                download_queue.set_history_sink(library_db.record)
+            except Exception:
+                logger.debug("Library sink not attached", exc_info=True)
         except Exception as e:
             logger.debug("Queue manager init failed: %s", e)
 
