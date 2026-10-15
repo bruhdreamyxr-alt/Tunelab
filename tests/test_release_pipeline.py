@@ -480,31 +480,45 @@ class RemoteReleaseTests(unittest.TestCase):
 
 
 class MacUiWiringTests(unittest.TestCase):
-    """Guards on ui.py, which needs a live Tk window to exercise properly."""
+    """Guards on the UI's update wiring, which needs a live Tk window.
+
+    The update code moved from ui.py into pages/updates.py, so these read
+    the shell plus every page module - the same corpus rule the ui.py
+    wiring tests use. The union is the same code either way.
+    """
+
+    @staticmethod
+    def _read_ui() -> str:
+        parts = [_read("ui.py")]
+        pages_dir = os.path.join(PROJECT_DIR, "pages")
+        for name in sorted(os.listdir(pages_dir)):
+            if name.endswith(".py"):
+                parts.append(_read(os.path.join("pages", name)))
+        return "\n".join(parts)
 
     def test_the_dead_end_message_is_gone(self):
         self.assertNotIn(
             "App self-update is only available in the Windows build",
-            _read("ui.py"),
+            self._read_ui(),
             "the macOS button must report updates now, not just explain itself",
         )
 
     def test_the_mac_flow_exists_and_opens_the_download(self):
-        source = _read("ui.py")
+        source = self._read_ui()
         self.assertIn("_check_macos_update", source)
         self.assertIn("_after_macos_update_check", source)
         self.assertIn("_offer_macos_download", source)
         self.assertIn("webbrowser.open", source)
 
     def test_the_startup_prompt_knows_the_platform(self):
-        source = _read("ui.py")
+        source = self._read_ui()
         self.assertIn("def _offer_startup_update(self, local_ver, release)", source)
         self.assertIn("updater.macos_download_url", source)
         self.assertIn("updater.RELEASES_PAGE", source)
 
     def test_macs_are_only_told_about_releases_with_a_mac_build(self):
         """A Windows-only release must not be reported to Macs at all."""
-        source = _read("ui.py")
+        source = self._read_ui()
         # The startup check uses the platform-aware gate...
         self.assertIn("updater.available_update(release)", source)
         # ...and the button path refuses a release with no Mac build.

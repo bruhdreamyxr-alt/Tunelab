@@ -130,15 +130,15 @@ from ui_theme import (  # noqa: F401  (re-exported)
 from ui_widgets import (  # noqa: E402  (after the ctk import)
     _QueueRowList,
     UiSplitsMixin,
-    build_update_banner,
     hide_scrollbar_until_hover,
 )
 
 from pages.history import HistoryPageMixin  # noqa: E402
 from pages.queue import QueuePageMixin  # noqa: E402
+from pages.updates import UpdatesPageMixin  # noqa: E402
 
 class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
-                          HistoryPageMixin):
+                          HistoryPageMixin, UpdatesPageMixin):
     # -----------------
     # Persistent UI Preferences
     # -----------------
@@ -209,6 +209,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             # written-but-undeclared key is dropped on the next launch, which
             # would turn a permanent skip back into tomorrow's nag.
             "skipped_version": "",
+            # When the last app-update check ran, for the Update
+            # Center's "Last checked" line. Declared like
+            # skipped_version: _load_prefs drops undeclared keys.
+            "last_update_check": "",
         }
 
     def _load_prefs(self) -> dict:
@@ -631,6 +635,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.tab_performance = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         self.tab_queue = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         self.tab_history = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        self.tab_updates = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         self.tab_aep = ctk.CTkFrame(self.content_frame, fg_color="transparent")
 
         # The single page registry, built once every page frame exists (history
@@ -748,9 +753,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.bind('<Control-v>', self._paste_url_anywhere)
         self.bind('<Control-V>', self._paste_url_anywhere)
 
-        # Quick nav: Ctrl+1..7 jump straight to a page.
+        # Quick nav: Ctrl+1..8 jump straight to a page.
         for _n, _page in enumerate(
-            ("downloader", "queue", "history", "studio", "aep", "settings", "performance"),
+            ("downloader", "queue", "history", "studio", "aep", "settings",
+             "performance", "updates"),
             start=1,
         ):
             self.bind(f'<Control-{_n}>', lambda e, p=_page: self.show_frame(p))
@@ -1818,227 +1824,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self.after(0, lambda: self.ytdlp_update_btn.configure(state="normal", text="⮔ Update yt-dlp"))
         self._start_worker(worker)
 
-    def _check_macos_update(self):
-        """macOS update check: report a new version and offer the download.
-
-        A Mac cannot replace its own .app while it is running, so there is no
-        install step here - the user is taken to the disk image instead. Without
-        this the button did nothing but explain that self-update is
-        Windows-only, so Mac users were never told an update existed.
-        """
-        import updater  # local module
-        from version import __version__ as local_ver
-
-        self.app_update_btn.configure(state="disabled", text="Checking...")
-        self.update_dl_status("Checking for app updates...", "#3498db")
-
-        def worker():
-            try:
-                release = updater.get_remote_release()
-            except Exception:
-                release = None
-            self.after(0, lambda: self._after_macos_update_check(release, local_ver))
-
-        self._start_worker(worker)
-
-    def _after_macos_update_check(self, release, local_ver):
-        """Show the result of the macOS update check."""
-        import updater  # local module
-
-        self.app_update_btn.configure(state="normal", text="Check for App Updates")
-        remote_ver = (release or {}).get("version")
-        if not remote_ver:
-            self.update_dl_status("Could not reach update server.", "#e74c3c")
-            self.show_toast("No update information available right now.", "warning")
-            return
-        if not updater.is_newer_version(remote_ver):
-            self.update_dl_status(f"Up to date (v{local_ver}).", "#27ae60")
-            self.show_toast(f"You already have the latest version ({local_ver}).", "success")
-            return
-        if not updater.macos_download_url(release):
-            # Newer, but it ships no Mac build - a Windows-only release. Say so
-            # plainly instead of offering a download that does not exist, and
-            # never let it turn into a recurring prompt.
-            self.update_dl_status(f"Up to date (v{local_ver}).", "#27ae60")
-            self._show_info_dialog(
-                "No Mac Update",
-                f"Version {remote_ver} has been released, but it contains no "
-                f"macOS build.\n\nYou already have the newest Mac version "
-                f"({local_ver}).")
-            return
-        self.update_dl_status(f"Update available (v{remote_ver}).", "#f39c12")
-        self._offer_macos_download(local_ver, release)
-
-    def _offer_macos_download(self, local_ver, release):
-        """Offer to open the new .dmg in the browser (macOS)."""
-        import updater  # local module
-        import webbrowser
-
-        remote_ver = (release or {}).get("version", "?")
-        # The direct disk image when the Release has one for this Mac, otherwise
-        # the Release page, so the user is never left without a route.
-        target = updater.macos_download_url(release) or updater.RELEASES_PAGE
-
-        if messagebox.askyesno(
-            "Update Available",
-            f"A new version is available:\n\n"
-            f"  Current: {local_ver}\n"
-            f"  Latest:  {remote_ver}\n\n"
-            f"A Mac cannot replace the app while it is running, so this opens "
-            f"the download in your browser.\n"
-            f"Then drag the new app over the old one in Applications.\n\n"
-            f"Open the download now?",
-        ):
-            try:
-                webbrowser.open(target)
-                self.update_dl_status(f"Opened the download for v{remote_ver}.", "#27ae60")
-            except Exception as e:
-                logger.warning("Could not open a browser: %s", e)
-                self._show_info_dialog("Update Available", f"Download it here:\n\n{target}")
-
-    def _check_updates_on_startup(self):
-        """Quiet startup auto-check: only prompts if a newer version exists.
-
-        Runs in a background thread so the UI stays responsive; any UI touch
-        is marshalled back to the main thread via after(). Silent when the
-        app is already up-to-date (no popup on every launch). Rate-limited to
-        once per day.
-        """
-        if download_queue._update_check_done_today('app'):
-            logger.debug("App update check already ran today; skipping")
-            return
-        import threading
-
-        def _runner():
-            try:
-                import updater  # local module
-                from version import __version__ as local_ver
-
-                if not updater.is_frozen():
-                    return
-
-                release = updater.get_remote_release()
-                if not release or not release.get("version"):
-                    return
-
-                if not updater.is_newer_version(release["version"]):
-                    return
-                # Only prompt when this platform can do something with it:
-                # Windows needs the packaged ZIP, a Mac needs a .dmg for its own
-                # architecture. A Windows-only release must not nag Macs.
-                if not updater.available_update(release):
-                    return
-                download_queue._mark_update_check_done('app')
-
-                self.after(0, lambda: self._offer_startup_update(local_ver, release))
-            except Exception:
-                # Never let a background update check crash the app on startup.
-                pass
-
-        threading.Thread(target=_runner, daemon=True).start()
-
-
-    def _hide_update_banner(self) -> None:
-        """Take the update banner down, if it is up.
-
-        pack_forget rather than destroy: the startup check runs once a day but
-        the Performance page can also offer an update, and rebuilding the
-        widgets each time is work for no gain. The frame itself is permanent,
-        so hiding it is one call.
-        """
-        try:
-            self._update_banner.pack_forget()
-            self._update_banner_set = False
-        except Exception:
-            logger.debug("Could not hide the update banner", exc_info=True)
-
-    def _show_update_banner(self, local_ver: str, remote_ver: str,
-                            on_accept=None, release_notes: str = "") -> None:
-        """Offer an available update inline instead of in a modal dialog.
-
-        The widgets are built by ui_widgets.build_update_banner; this only
-        decides when they exist. Never stacks: a second update found while the
-        first is up refreshes the text in place rather than adding a row.
-
-        Besides the accept/later pair the banner carries "Skip this version":
-        declining a version should silence it until a newer one ships, not
-        re-ask every launch. *release_notes* fills the inline "What's new"
-        expander so the offer can be judged instead of trusted.
-        """
-        try:
-            banner = self._update_banner
-            for child in banner.winfo_children():
-                child.destroy()
-
-            def _later():
-                self._hide_update_banner()
-                self.show_toast("Update reminder dismissed.", "info", 2500)
-
-            def _skip():
-                # skipped_version is a declared default pref - _load_prefs
-                # keeps only declared keys, so without that declaration this
-                # write would vanish on the next launch and the nag would
-                # return the day after.
-                self._set_pref("skipped_version", str(remote_ver))
-                self._hide_update_banner()
-                self.show_toast(f"v{remote_ver} won't be offered again.",
-                                "info", 3000)
-
-            def _accept():
-                self._hide_update_banner()
-                if on_accept is not None:
-                    on_accept()
-
-            now, later, skip = build_update_banner(
-                banner, getattr(self, "_palette", {}) or {},
-                local_ver, remote_ver, on_accept=_accept, on_later=_later,
-                on_skip=_skip, release_notes=release_notes)
-            self._style_button(now, "primary", bordered=True)
-            self._style_button(later, "secondary", bordered=True)
-            self._style_button(skip, "ghost", bordered=True)
-
-            banner.pack(fill="x", padx=12, pady=(8, 0), before=self.content_frame)
-            self._update_banner_set = True
-        except Exception:
-            logger.debug("Could not show the update banner", exc_info=True)
-
-    def _offer_startup_update(self, local_ver, release):
-        """Show the 'update available' prompt found by the startup check."""
-        import updater  # local module
-
-        remote_ver = (release or {}).get("version", "?")
-        if not updater.self_update_supported():
-            if not updater.macos_download_url(release):
-                # A Windows-only release: nothing this Mac can use, so stay
-                # silent rather than prompting about it.
-                return
-            # macOS: the dialog below promises a Windows UAC prompt and an
-            # automatic relaunch, neither of which exists here, so offer the
-            # download instead.
-            self.update_dl_status(f"Update available (v{remote_ver}).", "#f39c12")
-            self._offer_macos_download(local_ver, release)
-            return
-
-        # A version the user explicitly skipped stays skipped until a newer
-        # one ships: the point of the button is to end the daily re-nag, not
-        # to delay it by one launch. The manual "Check for App Updates"
-        # button deliberately ignores this - asking directly is not a nag.
-        skipped = str((getattr(self, "_prefs", None) or {}).get(
-            "skipped_version", "") or "")
-        if skipped and skipped == str(remote_ver):
-            logger.debug("Not re-offering skipped update v%s", remote_ver)
-            return
-
-        # Non-blocking: the banner states the same thing the modal did, minus
-        # the interruption. The banner keeps to what is always true (the app
-        # closes and relaunches); the confirmation dialog then spells out
-        # whether this machine needs the admin prompt. The release notes ride
-        # along so the offer can be judged rather than trusted.
-        self._show_update_banner(local_ver, remote_ver,
-                                 on_accept=self.check_for_app_updates,
-                                 release_notes=str((release or {}).get("body") or ""))
-
-
     def _do_self_restart(self):
         """Graceful shutdown so the updater can replace the running EXE."""
         self._ui_closed = True
@@ -2993,6 +2778,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
          'Appearance'),
         ('performance', 'tab_performance', 'build_performance_view',
          'Performance Settings'),
+        ('updates', 'tab_updates', 'build_updates_view', 'Update Center'),
     )
 
     def _discover_theme_roles(self, w) -> dict:
@@ -3107,6 +2893,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             'aep': 'AEP Version Converter',
             'settings': 'Appearance',
             'performance': 'Performance Settings',
+            'updates': 'Update Center',
         }
         self.title_lbl.configure(text=page_titles.get(name, ''))
 
@@ -3244,14 +3031,15 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     # Collapsible sidebar
     # -----------------
     # The pages you work in, then the pages you tune. The flat order is
-    # unchanged - Ctrl+1..7 still map to downloader, queue, history, studio,
-    # aep converter, settings, performance - grouping only adds a header
-    # above each set.
+    # unchanged - Ctrl+1..8 map to downloader, queue, history, studio,
+    # aep converter, settings, performance, update center - grouping only
+    # adds a header above each set.
     _SB_GROUPS = (("MENU", ("downloader", "queue", "history", "studio", "aep")),
-                  ("SETUP", ("settings", "performance")))
+                  ("SETUP", ("settings", "performance", "updates")))
     # Shown in each row's right slot, mirroring the <Control-N> bindings.
     _SB_KEYS = {"downloader": "1", "queue": "2", "history": "3",
-                "studio": "4", "aep": "5", "settings": "6", "performance": "7"}
+                "studio": "4", "aep": "5", "settings": "6",
+                "performance": "7", "updates": "8"}
 
     def _build_sidebar(self):
         """Brand, grouped nav rows, badge slots, footer toggle, accent pill.
@@ -3275,6 +3063,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             'aep': ('aep', 'AEP Convert'),
             'settings': ('settings', 'Theme'),
             'performance': ('performance', 'Speed'),
+            'updates': ('refresh', 'Updates'),
         }
         # Hover tips: the row's own name plus its shortcut. A sentence here sits
         # in a 300px box over the page, which is a lot of furniture to drop next
