@@ -1350,7 +1350,8 @@ class RailIconTests(unittest.TestCase):
     ICONS = ("download", "queue", "history", "studio", "settings",
              "performance", "note", "chevron_left", "chevron_right",
              "play", "stop", "close", "check", "plus", "refresh",
-             "trash", "folder", "search", "skip", "clapper", "aep")
+             "trash", "folder", "search", "skip", "clapper", "aep",
+             "update")
 
     @staticmethod
     def _points(shape):
@@ -1393,8 +1394,8 @@ class RailIconTests(unittest.TestCase):
 
     def test_every_nav_row_maps_to_an_icon_that_draws_something(self):
         body = _method_source("_build_sidebar")
-        for name in ("download", "queue", "history", "studio", "settings",
-                     "performance"):
+        for name in ("download", "queue", "history", "studio", "aep",
+                     "settings", "performance", "update"):
             self.assertIn(f"('{name}',", body)
         from ui import _icon_shapes
         for name in self.ICONS:

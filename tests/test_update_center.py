@@ -48,7 +48,7 @@ class UpdateCenterWiringTests(unittest.TestCase):
 
     def test_the_rail_and_shortcuts_reach_the_page(self):
         src = _source()
-        self.assertIn("'updates': ('refresh', 'Updates'),", src)
+        self.assertIn("'updates': ('update', 'Updates'),", src)
         self.assertIn('"updates": "8"', src)
         self.assertIn('("SETUP", ("settings", "performance", "updates"))', src)
         # The Ctrl+N loop must list it, or the hint lies.
@@ -56,6 +56,15 @@ class UpdateCenterWiringTests(unittest.TestCase):
             '("downloader", "queue", "history", "studio", "aep", "settings",',
             src)
         self.assertIn('"performance", "updates"),', src)
+
+    def test_the_page_carries_its_own_drawn_mark(self):
+        # The section's logo is geometry, not a font glyph: the rail row and
+        # the page header share the same sparkle, painted from the palette.
+        src = _source()
+        self.assertIn('_paint_icon(glyph, "update", accent', src)
+        self.assertIn("if name == 'update':",
+                      (PROJECT_DIR / "ui_theme.py").read_text(
+                          encoding="utf-8"))
 
     def test_the_last_check_stamp_is_a_declared_pref(self):
         # _load_prefs keeps only declared keys: an undeclared stamp would

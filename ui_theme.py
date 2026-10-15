@@ -214,6 +214,16 @@ def _icon_shapes(name: str) -> tuple[tuple[Any, ...], ...]:
         # is what makes it read as "again" rather than as a plain circle.
         return (('arc', 12, 12, 7.8, 30, 290),
                 ('polyfill', [(19.6, 6.4), (14.9, 5.6), (17.4, 9.4)]))
+    if name == 'update':
+        # The Update Center's own mark: a four-point sparkle (tips with
+        # 45-degree valleys) plus a companion dot, not a rename of the
+        # refresh arc - the arc says "again", this says "there's something
+        # new". The star sits slightly left so the pair balances on the
+        # grid, which is what the centring test measures.
+        return (('polyfill', [(10.6, 3.6), (12.9, 9.3), (18.4, 11.6),
+                              (12.9, 13.9), (10.6, 19.6), (8.3, 13.9),
+                              (2.8, 11.6), (8.3, 9.3)]),
+                ('disc', 18.6, 5.2, 1.7))
     if name == 'trash':
         return (('line', 4.4, 7, 19.6, 7),
                 ('poly', [(9, 7), (9, 4.6), (15, 4.6), (15, 7)]),

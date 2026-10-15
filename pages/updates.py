@@ -9,11 +9,12 @@ import logging
 import time
 import webbrowser
 
+import tkinter as tk
 from tkinter import messagebox
 from typing import Any
 
 import customtkinter as ctk
-from ui_theme import UITheme
+from ui_theme import UITheme, _mix, _paint_icon
 from ui_widgets import build_update_banner
 import download_queue
 
@@ -276,6 +277,34 @@ class UpdatesPageMixin:
                                         fg_color="transparent")
         scroll.pack(fill="both", expand=True,
                     padx=UITheme.RADIUS_CARD, pady=UITheme.RADIUS_CARD)
+
+        # Header: the section's drawn mark on an accent tile - the same
+        # sparkle the rail row uses, so the icon has a home rather than
+        # being a renamed refresh arc. The canvas recipe mirrors the
+        # sidebar's brand tile: geometry the palette can ink, never a font.
+        pal = getattr(self, "_palette", {}) or {}
+        accent = pal.get("accent", UITheme.COLOR_PRIMARY)
+        head = ctk.CTkFrame(scroll, fg_color="transparent")
+        head.pack(fill="x", padx=0, pady=(0, 8))
+        tile = ctk.CTkFrame(
+            head, width=44, height=44,
+            corner_radius=UITheme.RADIUS_SM, fg_color="transparent")
+        tile.pack(side="left", padx=(0, 12))
+        glyph = tk.Canvas(
+            tile, width=44, height=44, highlightthickness=0, bd=0,
+            bg=_mix(pal.get("bg", "#1e1e24"), accent, 0.18))
+        glyph.place(relx=0.5, rely=0.5, anchor="center")
+        _paint_icon(glyph, "update", accent, size=32, width=3)
+        ctk.CTkLabel(head, text="Update Center",
+                     font=UITheme.F(15, "bold"), anchor="w"
+                     ).pack(anchor="w")
+        ctk.CTkLabel(
+            head,
+            text="New versions, what changed in them, and one place to "
+                 "stop being asked.",
+            font=UITheme.F(11), anchor="w",
+            text_color=pal.get("sub", "#95a5a6"),
+        ).pack(anchor="w")
 
         # Card 1: where this install stands, and the ways to act.
         status = self._settings_card(scroll, "This app")

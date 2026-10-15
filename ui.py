@@ -3058,7 +3058,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             'aep': ('aep', 'AEP Convert'),
             'settings': ('settings', 'Theme'),
             'performance': ('performance', 'Speed'),
-            'updates': ('refresh', 'Updates'),
+            'updates': ('update', 'Updates'),
         }
         # Hover tips: the row's own name plus its shortcut. A sentence here sits
         # in a 300px box over the page, which is a lot of furniture to drop next
