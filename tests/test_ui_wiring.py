@@ -58,15 +58,30 @@ requires_ctk = unittest.skipUnless(
 
 
 def _source() -> str:
-    return (_REPO / "ui.py").read_text(encoding="utf-8")
+    """The UI's source, across the modules it now lives in.
+
+    The pages moved out of ui.py into the pages/ package, so a grep of
+    ui.py alone would pass/fail for the wrong reason the moment a guard's
+    subject moves. The union keeps every guard about what the app does,
+    not which file it is written in - and since the corpus is the same
+    code either way, no existing assertion changes meaning.
+    """
+    parts = [(_REPO / "ui.py").read_text(encoding="utf-8")]
+    pages_dir = _REPO / "pages"
+    if pages_dir.is_dir():
+        for f in sorted(pages_dir.glob("*.py")):
+            parts.append(f.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def _class_source() -> str:
-    """The source of the app class only.
+    """The source of the app class, plus any page mixin that extends it.
 
-    Scoped deliberately: _QueueRowList (a helper class) also defines an
-    ``__init__``, and the method regex below must keep resolving names
-    against UniversalAudioStudio, not whichever class comes first.
+    Scoped deliberately: other classes (``_QueueRowList`` in ui_widgets,
+    the page mixins) also define methods, and the regex below must keep
+    resolving names against UniversalAudioStudio's own body first. The
+    page files sit after the class in the _source() corpus, so a method
+    extracted into a mixin still resolves - that is the point.
     """
     src = _source()
     m = re.search(r"\nclass UniversalAudioStudio\(.*", src, re.DOTALL)
@@ -85,11 +100,13 @@ def _method_source(name: str) -> str:
 
 
 def _place_calls():
-    """Every ``.place(...)`` call in ui.py as ``(line number, call text)``.
+    """Every ``.place(...)`` call across the UI's modules as ``(line, call)``.
 
     Balanced by hand rather than matched with one regex: these calls span
     lines and carry nested calls, so a pattern that stops at the first ")"
     would sometimes read half the arguments and miss the size keywords.
+    Line numbers count from the start of the ui.py segment; the page files
+    follow it in the corpus.
     """
     src = _source()
     calls = []
@@ -616,7 +633,8 @@ class QueueRowThemingTests(unittest.TestCase):
         """
         return "\n".join(
             (_REPO / name).read_text(encoding="utf-8")
-            for name in ("ui.py", "ui_widgets.py", "ui_theme.py")
+            for name in ("ui.py", "ui_widgets.py", "ui_theme.py",
+                         "pages/queue.py", "pages/history.py")
         )
 
     def test_no_live_listbox_construction(self):
@@ -625,11 +643,16 @@ class QueueRowThemingTests(unittest.TestCase):
         self.assertIn("class _QueueRowList", src)
 
     def test_the_app_still_uses_the_standalone_class(self):
-        # Not just "the class exists somewhere": ui.py must be the module that
-        # instantiates it, or the split silently left a dead class behind.
+        # Not just "the class exists somewhere": the queue page must
+        # instantiate *this* class, or the split silently left a dead class
+        # behind (or grew a second one). ui keeps the same binding so any
+        # ui._QueueRowList reference stays the identical class.
         import ui
         from ui_widgets import _QueueRowList
         self.assertIs(ui._QueueRowList, _QueueRowList)
+        queue_page = (_REPO / "pages" / "queue.py").read_text(encoding="utf-8")
+        self.assertIn("from ui_widgets import _QueueRowList", queue_page)
+        self.assertIn("_QueueRowList(self.tab_queue", queue_page)
 
     def test_rows_speak_the_listbox_api_the_refresh_logic_pins(self):
         src = self._ui_source_everywhere()

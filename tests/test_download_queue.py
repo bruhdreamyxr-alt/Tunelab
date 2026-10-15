@@ -25,8 +25,16 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 def _queue_attributes_read_by_ui() -> set[str]:
-    """Every name ui.py resolves on the queue manager, as a set of strings."""
-    source = (_REPO / "ui.py").read_text(encoding="utf-8")
+    """Every name the UI resolves on the queue manager, as a set of strings.
+
+    The queue/history pages live in pages/, so the corpus is those plus
+    ui.py - otherwise an attribute used only after the extraction would
+    fall out of the guard's view.
+    """
+    source = "\n".join(
+        (_REPO / name).read_text(encoding="utf-8")
+        for name in ("ui.py", "pages/queue.py", "pages/history.py")
+    )
     names = set(re.findall(r"_queue_manager\.(\w+)", source))
     # ui.py also binds the manager to a local `queue` inside _enqueue_urls;
     # those matches collide with `import queue` (stdlib) uses such as

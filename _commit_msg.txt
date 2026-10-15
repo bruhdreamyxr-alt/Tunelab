@@ -1,0 +1,19 @@
+Extract queue + history pages from ui.py into the pages/ package
+
+ui.py drops from 5,923 to 5,155 lines. The queue page
+(_init_queue_manager.._queue_retry_failed) and the history page
+(build_history_view.._clear_history) become QueuePageMixin and
+HistoryPageMixin in pages/, mixed into UniversalAudioStudio; method
+names are unchanged, so the lazy-page wiring, the rail nav and every
+caller keep working. Names the shell owns that a mixin touches
+(tab_queue, after, _queue_manager, show_toast, ...) are declared Any
+inside the mixin - the convention ui_widgets already uses - keeping
+pyright clean without the mixin knowing where the shell sets them.
+
+Source-string guards now read ui.py plus pages/*.py; the union is the
+same code either way, so no assertion changes meaning, and the
+queue-manager attribute guard covers the page modules too. ui keeps
+its _QueueRowList binding so its identity with ui_widgets._QueueRowList
+cannot drift.
+
+527 tests OK, pyright clean.
