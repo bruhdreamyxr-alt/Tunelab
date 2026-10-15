@@ -121,5 +121,23 @@ class MovedUpdateFlowsTests(unittest.TestCase):
         self.assertIn("download_queue._mark_update_check_done('app')", body)
 
 
+class SingleUpdateSurfaceTests(unittest.TestCase):
+    """The Update Center is the only place the app can be updated from."""
+
+    def test_the_speed_tab_no_longer_offers_app_updates(self):
+        src = _source()
+        self.assertNotIn("self.app_update_btn = ", src)
+        self.assertNotIn(".app_update_btn.configure(", src)
+
+    def test_the_flows_reach_the_old_button_only_through_the_guard(self):
+        # ui_widgets hosts check_for_app_updates; it is not in the page
+        # corpus, so it is read directly here.
+        wsrc = (PROJECT_DIR / "ui_widgets.py").read_text(encoding="utf-8")
+        self.assertNotIn(".app_update_btn.configure(", wsrc)
+        self.assertIn("def _app_update_btn_set(", wsrc)
+        self.assertIn("self._app_update_btn_set(", wsrc)
+        self.assertIn("self._app_update_btn_set(", _source())
+
+
 if __name__ == "__main__":
     unittest.main()

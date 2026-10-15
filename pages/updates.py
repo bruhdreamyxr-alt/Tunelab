@@ -26,6 +26,7 @@ class UpdatesPageMixin:
 
     # Names the shell (or another page) owns: declared so the type checker
     # can see them from here, the convention ui_widgets uses.
+    _app_update_btn_set: Any
     _prefs: Any
     _set_pref: Any
     _settings_card: Any
@@ -35,7 +36,6 @@ class UpdatesPageMixin:
     _update_banner: Any
     _updates_last_release: Any
     after: Any
-    app_update_btn: Any
     check_for_app_updates: Any
     content_frame: Any
     show_toast: Any
@@ -53,7 +53,7 @@ class UpdatesPageMixin:
         import updater  # local module
         from version import __version__ as local_ver
 
-        self.app_update_btn.configure(state="disabled", text="Checking...")
+        self._app_update_btn_set(state="disabled", text="Checking...")
         self.update_dl_status("Checking for app updates...", "#3498db")
 
         def worker():
@@ -69,7 +69,7 @@ class UpdatesPageMixin:
         """Show the result of the macOS update check."""
         import updater  # local module
 
-        self.app_update_btn.configure(state="normal", text="Check for App Updates")
+        self._app_update_btn_set(state="normal", text="Check for App Updates")
         remote_ver = (release or {}).get("version")
         if not remote_ver:
             self.update_dl_status("Could not reach update server.", "#e74c3c")
@@ -245,8 +245,8 @@ class UpdatesPageMixin:
 
         # A version the user explicitly skipped stays skipped until a newer
         # one ships: the point of the button is to end the daily re-nag, not
-        # to delay it by one launch. The manual "Check for App Updates"
-        # button deliberately ignores this - asking directly is not a nag.
+        # to delay it by one launch. The Update Center's Check button
+        # deliberately ignores this - asking directly is not a nag.
         skipped = str((getattr(self, "_prefs", None) or {}).get(
             "skipped_version", "") or "")
         if skipped and skipped == str(remote_ver):

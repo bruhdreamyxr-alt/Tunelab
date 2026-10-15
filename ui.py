@@ -2674,13 +2674,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 2))
 
-        self.app_update_btn = ctk.CTkButton(
-            maint, text="Check for App Updates", width=260,
-            cursor="hand2", command=self.check_for_app_updates,
-        )
-        self.app_update_btn.pack(anchor="w", padx=16, pady=(0, 2))
-        self._style_button(self.app_update_btn, "secondary", icon="refresh")
-
+        # App updates live on the Update Center page (Ctrl+8) only; this
+        # card keeps the tool-maintenance actions (yt-dlp, cache).
         self.clear_cache_btn = ctk.CTkButton(
             maint, text="Clear Download Cache", width=260,
             command=self.clear_download_cache,

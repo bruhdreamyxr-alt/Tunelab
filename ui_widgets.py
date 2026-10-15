@@ -357,7 +357,6 @@ class UiSplitsMixin:
     _check_macos_update: Any
     _do_self_restart: Any
     _start_worker: Any
-    app_update_btn: Any
     update_dl_status: Any
     show_toast: Any
     _settings_card: Any
@@ -391,6 +390,20 @@ class UiSplitsMixin:
     rv_sld: Any
     _ensure_ffmpeg: Any
 
+    def _app_update_btn_set(self, **kwargs) -> None:
+        """Touch the old Speed-tab app-update button if one exists.
+
+        The Update Center is the only surface that updates the app now, so
+        the button is gone; these flows keep working (and would decorate a
+        button again if some build still had one) through this guard.
+        """
+        btn = getattr(self, "app_update_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(**kwargs)
+            except Exception:
+                pass
+
     def check_for_app_updates(self):
         """Check the remote manifest and trigger an in-place self-update."""
         import updater  # local module
@@ -411,7 +424,7 @@ class UiSplitsMixin:
             self._check_macos_update()
             return
 
-        self.app_update_btn.configure(state="disabled", text="Checking...")
+        self._app_update_btn_set(state="disabled", text="Checking...")
         self.update_dl_status("Checking for app updates...", "#3498db")
 
         def worker():
@@ -422,7 +435,7 @@ class UiSplitsMixin:
 
             if not info or not info.get("version") or not info.get("download_url"):
                 self.after(0, lambda: self.update_dl_status("Could not reach update server.", "#e74c3c"))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                self.after(0, lambda: self._app_update_btn_set(state="normal", text="Check for App Updates"))
                 self.after(0, lambda: self.show_toast("No update information available right now.", "warning"))
                 return
 
@@ -431,7 +444,7 @@ class UiSplitsMixin:
 
             if not updater.is_newer_version(remote_ver):
                 self.after(0, lambda: self.show_toast(f"You already have the latest version ({local_ver}).", "success"))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                self.after(0, lambda: self._app_update_btn_set(state="normal", text="Check for App Updates"))
                 return
 
 
@@ -485,7 +498,7 @@ class UiSplitsMixin:
 
             if not result:
                 # User declined (or timed out).
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                self.after(0, lambda: self._app_update_btn_set(state="normal", text="Check for App Updates"))
                 return
 
             self.after(0, lambda: self.update_dl_status(f"Downloading update v{remote_ver}...", "#3498db"))
@@ -495,7 +508,7 @@ class UiSplitsMixin:
             if not new_exe_path:
                 self.after(0, lambda: self.update_dl_status("Download failed. Please try again.", "#e74c3c"))
                 self.after(0, lambda: self._show_error_dialog("Update Error", "Failed to download the update."))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text=f"Update to v{remote_ver}"))
+                self.after(0, lambda: self._app_update_btn_set(state="normal", text=f"Update to v{remote_ver}"))
                 return
 
             old_exe_path = sys.executable
@@ -517,7 +530,7 @@ class UiSplitsMixin:
                     "Could not start the updater.\n\n"
                     "Either updater_cli.exe is missing, or admin permission "
                     "was declined when Windows asked."))
-                self.after(0, lambda: self.app_update_btn.configure(state="normal", text="Check for App Updates"))
+                self.after(0, lambda: self._app_update_btn_set(state="normal", text="Check for App Updates"))
                 return
 
             # The updater will replace the EXE and we exit so the file can be replaced.
