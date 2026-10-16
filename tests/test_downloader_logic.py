@@ -479,15 +479,15 @@ class Aria2CommandLineTests(unittest.TestCase):
 
 
 class VideoFormatSortTests(unittest.TestCase):
-    """Resolution must outrank codec in format_sort — the pixelation bug.
+    """Compatibility must outrank resolution in format_sort — no re-encode.
 
-    'vcodec:h264' used to come first, and yt-dlp ranks user sort fields
-    ahead of the defaults, so codec beat resolution: on a 4K video the
-    picker returned the top h264 rung (1080p @ ~4.2 Mbps) while 2160p
-    VP9 @ ~24 Mbps existed — a bitrate gap that reads exactly as the
-    blocky/pixelated output the user reported. These tests drive yt-dlp's
-    real FormatSorter over synthetic formats (no network) and pin the
-    shipped VIDEO_FORMAT_SORT_FIELDS.
+    The app performs no post-download conversion, so what the sorter picks
+    is what ships: it has to import straight into After Effects and play
+    everywhere, which means H.264 wins even when a platform's top rung is
+    VP9/AV1 (the accepted tradeoff is a lower resolution — 1080p H.264
+    instead of 2160p VP9 — rather than a file that needs converting).
+    These tests drive yt-dlp's real FormatSorter over synthetic formats
+    (no network) and pin the shipped VIDEO_FORMAT_SORT_FIELDS.
     """
 
     # FormatSorter's constructor is untyped (yt-dlp ships no py.typed), so
@@ -527,38 +527,51 @@ class VideoFormatSortTests(unittest.TestCase):
                         key=sorter.calculate_preference)
         return ranked[-1]["format_id"]  # yt-dlp keeps the maximum key
 
-    def test_resolution_outranks_codec(self):
-        # The exact regression: codec-first picked h264_1080 over sdr2160.
-        self.assertEqual(self._best(self.FORMATS), "sdr2160")
+    def test_compatibility_outranks_resolution(self):
+        # Codec-first picks the H.264 rung even though 4K VP9 exists — the
+        # choice that replaced the removed post-download re-encode.
+        self.assertEqual(self._best(self.FORMATS), "h264_1080")
+
+    def test_resolution_still_ranks_within_a_codec(self):
+        # Inside the preferred codec, the highest rung wins...
+        h264_4k = dict(self.FORMATS[2], format_id="h264_2160", height=2160)
+        self.assertEqual(
+            self._best([h264_4k, self.FORMATS[2], self.FORMATS[4]]),
+            "h264_2160")
+        # ...and with no H.264 on offer, resolution still picks the top rung.
+        self.assertEqual(
+            self._best([self.FORMATS[3], self.FORMATS[1]]), "sdr2160")
 
     def test_h264_wins_a_resolution_tie(self):
         tie = [f for f in self.FORMATS if f["height"] == 1080]
         self.assertEqual(self._best(tie), "h264_1080")
 
     def test_sdr_beats_hdr_at_a_tie(self):
-        # The AE re-encode does no tonemapping: HDR input would shift colors.
+        # HDR needs tone-mapping that players/editors handle inconsistently;
+        # SDR is the predictable everywhere-works default.
         self.assertEqual(
             self._best([self.FORMATS[0], self.FORMATS[1]]), "sdr2160")
 
-    def test_codec_still_preferred_where_it_used_to_matter(self):
-        # Old codec-first list must still pick h264 at equal resolution...
-        tie = [f for f in self.FORMATS if f["height"] == 1080]
+    def test_shipped_list_is_codec_first(self):
+        # Codec before res is the deliberate, shipped order: with no
+        # post-download conversion, a VP9 top rung must not win over H.264.
+        fields = downloader.VIDEO_FORMAT_SORT_FIELDS
+        self.assertEqual(fields[0], "vcodec:h264")
+        self.assertLess(fields.index("vcodec:h264"), fields.index("res"))
+        # It agrees with the reference codec-first list on these formats.
         self.assertEqual(
-            self._best(tie, ["vcodec:h264", "acodec:aac", "res", "quality"]),
-            "h264_1080")
-        # ...but that same list loses 4K, which is why it was replaced.
-        self.assertEqual(
-            self._best(self.FORMATS, ["vcodec:h264", "acodec:aac", "res", "quality"]),
-            "h264_1080")
+            self._best(self.FORMATS,
+                       ["vcodec:h264", "acodec:aac", "res", "quality"]),
+            self._best(self.FORMATS))
 
-    def test_build_opts_uses_the_shared_resolution_first_sort(self):
+    def test_build_opts_uses_the_shared_compatibility_first_sort(self):
         opts = downloader.build_fast_yt_dlp_options(
             "/tmp", "x.%(ext)s", audio_only=False)
         fields = opts["format_sort"]
-        self.assertEqual(fields[0], "res")
+        self.assertEqual(fields[0], "vcodec:h264")
         self.assertLess(
-            fields.index("res"),
-            next(i for i, f in enumerate(fields) if f.startswith("vcodec")))
+            fields.index("vcodec:h264"),
+            next(i for i, f in enumerate(fields) if f.startswith("res")))
 
     def test_audio_options_have_no_video_sort(self):
         opts = downloader.build_fast_yt_dlp_options(
@@ -567,7 +580,7 @@ class VideoFormatSortTests(unittest.TestCase):
 
 
 class FallbackFormatSortTests(unittest.TestCase):
-    """The yt-dlp.exe fallback must apply the same resolution-first sort."""
+    """The yt-dlp.exe fallback must apply the same compatibility-first sort."""
 
     def _capture_video_args(self, audio_only=False, format_override=None):
         captured = {}
@@ -588,12 +601,12 @@ class FallbackFormatSortTests(unittest.TestCase):
             downloader._run_yt_dlp_exe = orig_run
         return captured["args"]
 
-    def test_video_branch_sorts_resolution_first(self):
+    def test_video_branch_sorts_compatibility_first(self):
         args = self._capture_video_args()
         self.assertIn("--format-sort", args)
         value = args[args.index("--format-sort") + 1]
-        self.assertTrue(value.startswith("res,"), value)
-        self.assertIn("vcodec:h264", value)
+        self.assertTrue(value.startswith("vcodec:h264,"), value)
+        self.assertIn("res", value.split(","))
 
     def test_video_override_branch_also_sorts(self):
         # download_video_mp4's fallback path passes the format through
@@ -605,99 +618,6 @@ class FallbackFormatSortTests(unittest.TestCase):
     def test_audio_branch_has_no_format_sort(self):
         args = self._capture_video_args(audio_only=True)
         self.assertNotIn("--format-sort", args)
-
-
-class AeReencodeArgsTests(unittest.TestCase):
-    """The AE re-encode must declare a spec-correct level and keep quality.
-
-    The forced '-level 4.0' was out of spec for >=1080p60/4K; hardware
-    decoders sized to the declared level glitch on out-of-spec streams —
-    scattered pixelated frames right after downloading.
-    """
-
-    def test_no_forced_level(self):
-        self.assertNotIn("-level", downloader._ae_reencode_args("a.mp4", "b.mp4"))
-
-    def test_keeps_visually_lossless_quality(self):
-        args = downloader._ae_reencode_args("a.mp4", "b.mp4")
-        self.assertEqual(args[:3], ["-y", "-i", "a.mp4"])
-        self.assertEqual(args[-1], "b.mp4")
-        self.assertEqual(args[args.index("-crf") + 1], "18")
-        self.assertEqual(args[args.index("-pix_fmt") + 1], "yuv420p")
-        self.assertEqual(args[args.index("-c:v") + 1], "libx264")
-
-    def test_timeout_survives_long_4k_encodes(self):
-        # 600s killed long re-encodes mid-way and silently left the
-        # AE-incompatible source file behind.
-        self.assertGreaterEqual(downloader.AE_REENCODE_TIMEOUT, 3600)
-
-    def test_the_encode_does_not_take_every_core(self):
-        """ffmpeg at 100% across the board makes the desktop unusable.
-
-        x264 defaults to all cores, so without an explicit cap a 4K download
-        saturates the machine - and since the user is watching the download in
-        TuneLab, a frozen-looking UI is what they actually notice.
-        """
-        args = downloader._ae_reencode_args("a.mp4", "b.mp4")
-        self.assertIn("-threads", args)
-        threads = int(args[args.index("-threads") + 1])
-        self.assertGreaterEqual(threads, 2, "a 4K encode on one thread would crawl")
-        self.assertLessEqual(threads, 4, "more threads buys little and costs the user their machine")
-
-    def test_thread_cap_leaves_cores_free_on_a_big_machine(self):
-        with mock.patch.object(downloader.os, "cpu_count", return_value=32):
-            self.assertLessEqual(downloader._ae_encode_threads(), 4)
-
-    def test_thread_cap_never_drops_to_a_single_thread(self):
-        with mock.patch.object(downloader.os, "cpu_count", return_value=2):
-            self.assertEqual(downloader._ae_encode_threads(), 2)
-
-    def test_thread_cap_survives_a_broken_cpu_count(self):
-        with mock.patch.object(downloader.os, "cpu_count", return_value=None):
-            self.assertGreaterEqual(downloader._ae_encode_threads(), 2)
-
-    def test_lookahead_is_shortened_to_keep_memory_down(self):
-        """x264's default 40-frame lookahead is ~0.5GB of frame buffers at 4K.
-
-        A full 4K re-encode peaked at ~3.2GB RSS with the default, which on a
-        small machine reads as "ffmpeg ate all my memory". A short lookahead
-        keeps the peak near 1.4GB for well under 1% more bytes.
-        """
-        args = downloader._ae_reencode_args("a.mp4", "b.mp4")
-        self.assertIn("-x264-params", args)
-        params = args[args.index("-x264-params") + 1]
-        self.assertIn("rc-lookahead=", params)
-        lookahead = int(params.split("rc-lookahead=")[1].split(":")[0])
-        self.assertGreaterEqual(lookahead, 5, "too short and mbtree stops working")
-        self.assertLessEqual(lookahead, 20, "the default 40 is the memory hog")
-
-    def test_lowering_priority_never_raises(self):
-        """A process we cannot demote must still be allowed to finish."""
-        boom = RuntimeError("no such process")
-
-        class FakeProc:
-            pid = boom  # any attribute access explodes
-
-        downloader._lower_process_priority(FakeProc())  # must not raise
-
-    def test_a_timed_out_encode_kills_the_child(self):
-        """A runaway 4K encode must not outlive the download that started it.
-
-        With Popen there is no timeout= parameter, so the guard has to be the
-        explicit kill path - otherwise a stuck ffmpeg would sit on a
-        multi-gigabyte temp file indefinitely.
-        """
-        proc = mock.MagicMock()
-        proc.communicate.side_effect = [
-            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=1),
-            None,
-        ]
-        with mock.patch.object(downloader.subprocess, "Popen", return_value=proc), \
-             mock.patch.object(downloader, "_get_ffmpeg_bin", return_value="ffmpeg"), \
-             mock.patch.object(downloader.os.path, "exists", return_value=True):
-            result = downloader._reencode_for_ae("a.mp4")
-        proc.kill.assert_called_once()
-        self.assertEqual(result, "a.mp4")
 
 
 class InstagramDuplicateDownloadTests(unittest.TestCase):

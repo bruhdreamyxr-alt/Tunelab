@@ -90,10 +90,9 @@ CLIP = ("https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/"
 
 ok_mp4 = run("MP4 download (direct media)", D.download_video_mp4, CLIP)
 ok_mp3 = run("MP3 extraction (direct media)", D.download_track, CLIP)
-# The YouTube MP4 case is deliberately NOT run by default: the source is 4K and
-# a full re-encode runs for many minutes even with the thread cap. _cpu_check.py
-# covers that path on a generated one-minute clip, so verifying it never needs a
-# ten-minute 4K download.
+# The YouTube MP4 case is deliberately NOT run by default: it would be a full
+# 4K download — minutes of real traffic covering nothing the direct MP4 case
+# above doesn't already cover (the same format sort runs on both paths).
 # The paths above hit a direct-media URL, which yt-dlp serves straight through
 # with no extractor involved. Real users paste YouTube/SoundCloud links, so the
 # MP3 case runs against an actual extractor to cover that path too. The fixture

@@ -295,8 +295,7 @@ def video_format_string(max_resolution: str = 'Best (up to 4K)') -> str:
 
     'Best (up to 4K)' keeps the existing unrestricted behavior. Otherwise we
     restrict the video stream to the chosen height (e.g. 1080p -> bestvideo[height<=1080]),
-    which saves time, disk and bandwidth when 4K isn't needed — the AE
-    re-encode keeps the source resolution, it does not downscale.
+    which saves time, disk and bandwidth when 4K isn't needed.
     """
     height = _VIDEO_RESOLUTION_MAP.get(max_resolution)
     if height is None or height == 'best':
@@ -305,21 +304,25 @@ def video_format_string(max_resolution: str = 'Best (up to 4K)') -> str:
     return f'bestvideo[height<={height}]+bestaudio/best[height<={height}]/best'
 
 
-# Resolution-first format sorting for video downloads.
+# Compatibility-first format sorting for video downloads.
 #
-# 'vcodec:h264' used to come BEFORE 'res', and yt-dlp ranks user sort
-# fields ahead of the defaults — so codec outranked resolution and
-# "Best (up to 4K)" silently picked the top h264 rung (typically 1080p,
-# sometimes only 720p) over 4K VP9/AV1: measured 1080p h264 @ 4.2 Mbps
-# where 2160p VP9 @ 24 Mbps existed. That bitrate gap is exactly the
-# blocky/pixelated look users reported. Now:
-#   res     — always take the highest resolution offered;
-#   +hdr    — prefer SDR at a tie (the AE re-encode does no tonemapping,
-#             so HDR input would come out with shifted colors);
-#   vcodec  — h264 wins any resolution tie, which keeps the common case
-#             re-encode-free; ensure_after_effects_compatibility still
-#             converts the occasional VP9/AV1 pick to H.264+AAC.
-VIDEO_FORMAT_SORT_FIELDS = ['res', '+hdr', 'vcodec:h264', 'acodec:aac', 'quality']
+# There is deliberately no post-download conversion in this app: what
+# yt-dlp picks is what ships, so the pick itself must work everywhere —
+# import straight into After Effects (and any other editor) and play in
+# any player/browser. Hence codec outranks resolution:
+#   vcodec:h264 — H.264 imports everywhere; VP9/AV1/HEVC are common top
+#                 rungs that VLC plays but editors reject;
+#   res         — within the chosen codec always take the highest rung,
+#                 so a 4K H.264 offering still beats 1080p H.264;
+#   +hdr        — prefer SDR at a tie (HDR needs tone-mapping that most
+#                 players and editors handle inconsistently);
+#   acodec:aac  — AAC over Opus; quality last as the final tie-break.
+# This list was resolution-first for a while (it maximized pixels, and an
+# afterwards re-encode handled the occasional VP9/AV1 pick). With that
+# conversion gone, a platform whose only top rung is VP9/AV1 now returns
+# the best H.264 rung instead: the lower resolution is the price of a
+# file that works with no extra steps.
+VIDEO_FORMAT_SORT_FIELDS = ['vcodec:h264', 'res', '+hdr', 'acodec:aac', 'quality']
 
 performance_config = dict(DEFAULT_PERF_CONFIG)
 
@@ -1198,8 +1201,8 @@ def build_fast_yt_dlp_options(base_dir, output_template, audio_only: bool = Fals
         cfg.update(perf_cfg)
     # yt-dlp options are a loose dict; type-checkers often treat values as Unknown.
     # For video, cap the resolution if the user picked one — saves time, disk
-    # and bandwidth when 4K isn't needed (the AE re-encode keeps the source
-    # resolution; it does not downscale).
+    # and bandwidth when 4K isn't needed (the cap is applied at download time;
+    # nothing is resized afterwards).
     if audio_only:
         base_format = 'bestaudio/best'
     else:
@@ -1302,12 +1305,11 @@ def build_fast_yt_dlp_options(base_dir, output_template, audio_only: bool = Fals
         ydl_opts['embedthumbnail'] = False
         ydl_opts['writeinfojson'] = False
         ydl_opts['writesubtitles'] = False
-        # Prefer codecs After Effects can import directly. AV1 (av01),
+        # Pick codecs everything plays and imports directly — AV1 (av01),
         # 10-bit HEVC/H.264 and Opus audio are common yt-dlp picks that VLC
-        # plays but AE rejects. Resolution still outranks codec (see
-        # VIDEO_FORMAT_SORT_FIELDS) so the resolution cap and "Best (up to
-        # 4K)" keep their promise; AE compatibility is finished by
-        # ensure_after_effects_compatibility, which re-encodes only when needed.
+        # plays but After Effects rejects — and with no conversion step
+        # afterwards, codec must outrank resolution (see
+        # VIDEO_FORMAT_SORT_FIELDS): the file is final the moment it lands.
         ydl_opts['format_sort'] = list(VIDEO_FORMAT_SORT_FIELDS)
 
     if audio_only:
@@ -2245,9 +2247,9 @@ def _fallback_download_with_ytdlp_exe(
         cmd += ['-f', format_override]
         if not audio_only:
             cmd += ['--merge-output-format', 'mp4', '--remux-video', 'mp4']
-            # Same resolution-first sort as the Python path (parity: without
-            # it the fallback silently picked VP9/AV1 regardless of codec
-            # preference, or the old codec-first quality cap).
+            # Same compatibility-first sort as the Python path (parity:
+            # without it the fallback silently picked VP9/AV1 regardless of
+            # codec preference).
             cmd += ['--format-sort', ','.join(VIDEO_FORMAT_SORT_FIELDS)]
     elif audio_only:
         fmt = AUDIO_FORMATS.get(_CURRENT_AUDIO_FORMAT, AUDIO_FORMATS['mp3_vbr'])
@@ -3350,266 +3352,6 @@ def _get_ffmpeg_bin():
     return find_helper("ffmpeg", include_path=True)
 
 
-def _get_ffprobe_bin():
-    return find_helper("ffprobe", include_path=True)
-
-
-def _probe_video_codec(filepath):
-    import json
-    ffprobe = _get_ffprobe_bin()
-    if not ffprobe or not os.path.exists(filepath):
-        return None
-    try:
-        completed = subprocess.run(
-            [ffprobe, "-v", "error", "-show_entries",
-             "stream=codec_type,codec_name,width,height,pix_fmt,bit_depth",
-             "-of", "json", filepath],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace",
-            **_no_window_kwargs(), timeout=30,
-        )
-        if completed.returncode != 0:
-            return None
-        data = json.loads(completed.stdout or "{}")
-        return data.get("streams") or []
-    except Exception:
-        return None
-
-
-def _needs_ae_reencode(filepath):
-    streams = _probe_video_codec(filepath)
-    if not streams:
-        return False
-    video = next((s for s in streams if s.get("codec_type") == "video"), None)
-    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
-    if not video:
-        return False
-    vcodec = (video.get("codec_name") or "").lower()
-    bd = int(video.get("bit_depth") or 0)
-    pix = (video.get("pix_fmt") or "").lower()
-    if vcodec in ("av01", "av1", "hevc", "h265", "vp9"):
-        return True
-    if vcodec in ("h264", "avc1") and (bd > 8 or (pix and "p10" in pix)):
-        return True
-    acodec = (audio.get("codec_name") or "").lower() if audio else ""
-    if acodec == "opus":
-        return True
-    return False
-
-
-# A 4K re-encode at crf 18 runs for minutes; the old 600s cap killed
-# longer encodes mid-way and silently left the AE-incompatible source
-# behind (the exception path returns the original file).
-AE_REENCODE_TIMEOUT = 3600
-
-# x264's default rc-lookahead is 40 frames. At 4K a decoded frame is ~12MB, so
-# the lookahead buffer alone holds ~0.5GB and a full 4K re-encode peaked at
-# ~3.2GB RSS - which on an 8GB machine reads as "ffmpeg ate all my memory".
-# Ten frames is plenty for mbtree to do its job: measured peak drops to ~1.4GB,
-# the encode is slightly *faster* (less lookahead to prime) and the output grew
-# under 1%. crf stays at 18, so visual quality is unchanged.
-AE_X264_PARAMS = "rc-lookahead=10"
-
-
-def _ae_encode_threads() -> int:
-    """How many cores the AE-compat re-encode may use.
-
-    x264 defaults to every core, so a 4K download saturates the machine and
-    Task Manager shows ffmpeg at 100% across the board. Leaving a couple of
-    cores free keeps the desktop, the browser and TuneLab itself responsive
-    while the encode runs in the background, which is the whole point of it
-    running in the background.
-
-    Half the cores (capped at 4) is the sweet spot: x264 scales well past 4
-    threads but with sharply diminishing returns, so this costs little
-    wall-clock and buys back a usable machine. Never returns below 2 - a
-    single-threaded encode of a 4K clip would take absurdly long.
-    """
-    try:
-        cores = os.cpu_count() or 2
-    except Exception:
-        cores = 2
-    return max(2, min(cores // 2, 4))
-
-
-def _ae_reencode_args(src: str, dst: str) -> list:
-    """ffmpeg argv for the AE-compat re-encode (pure; pinned by tests).
-
-    No forced ``-level``: the old ``-level 4.0`` is out of spec for
-    >=1080p60/4K content, and hardware decoders sized to the declared
-    level glitch on out-of-spec streams — scattered pixelated frames.
-    x264 derives the correct level from the actual resolution/fps.
-
-    ``-threads`` is capped (see _ae_encode_threads) and ``rc-lookahead`` is
-    shortened (see AE_X264_PARAMS) so the encode yields both the CPU and the
-    memory back to the machine instead of monopolising it.
-    """
-    return [
-        "-y", "-i", src,
-        "-c:v", "libx264", "-profile:v", "high",
-        "-pix_fmt", "yuv420p", "-crf", "18",
-        "-threads", str(_ae_encode_threads()),
-        "-x264-params", AE_X264_PARAMS,
-        "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-        "-movflags", "+faststart", dst,
-    ]
-
-
-def _reencode_process_kwargs() -> dict:
-    """Subprocess kwargs that run a long background encode in the background.
-
-    The AE-compat re-encode is the only genuinely CPU-saturating thing this app
-    runs: a 4K clip pins every core for minutes at normal priority, which makes
-    the whole desktop - and the TuneLab window the user is watching the download
-    from - stutter and crawl. That reads as "the app froze".
-
-    Dropping the child to below-normal priority costs very little wall-clock on
-    an encode that is mostly waiting on memory bandwidth, and hands the machine
-    back to the user. Note this must go through Popen: ``priority`` is not a
-    ``subprocess.run`` parameter, so the priority is applied by wrapping the
-    process rather than passed through kwargs.
-
-    POSIX uses ``os.nice`` on the child pid, which is advisory and simply has no
-    effect for a process we do not own the scheduling of - hence best-effort on
-    both platforms rather than a hard guarantee.
-    """
-    if os.name == "nt":
-        return _no_window_kwargs()
-    return {}
-
-
-def _lower_process_priority(proc) -> None:
-    """Best-effort demotion of a running child. Never raises.
-
-    The ctypes signatures matter here and are easy to get wrong: without them
-    ctypes assumes ``c_int`` for arguments *and* the return value. A 64-bit
-    HANDLE therefore gets truncated to 32 bits, ``SetPriorityClass`` is handed a
-    bogus handle, and the call fails silently - which looks exactly like "the
-    priority setting does nothing" while reporting no error at all. Declaring
-    argtypes/restype makes the call actually succeed.
-    """
-    try:
-        if os.name == "nt":
-            import ctypes
-            from ctypes import wintypes
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL,
-                                             wintypes.DWORD]
-            kernel32.OpenProcess.restype = wintypes.HANDLE
-            kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-            kernel32.SetPriorityClass.restype = wintypes.BOOL
-            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-            kernel32.CloseHandle.restype = wintypes.BOOL
-
-            PROCESS_SET_INFORMATION = 0x0400
-            PROCESS_ALL_ACCESS = 0x1FFFFF
-            BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-
-            # Try the least-privileged access mask first, then fall back to the
-            # broader one. Some hardened/elevated contexts deny PROCESS_SET_
-            # INFORMATION even to a process we just spawned ourselves - the
-            # OpenProcess succeeds but SetPriorityClass then fails with
-            # ERROR_ACCESS_DENIED - and silently leaving ffmpeg at Normal
-            # priority is exactly the case this code exists to prevent.
-            for mask in (PROCESS_SET_INFORMATION, PROCESS_ALL_ACCESS):
-                handle = kernel32.OpenProcess(mask, False, proc.pid)
-                if not handle:
-                    continue
-                try:
-                    if kernel32.SetPriorityClass(handle,
-                                                BELOW_NORMAL_PRIORITY_CLASS):
-                        return
-                finally:
-                    kernel32.CloseHandle(handle)
-        else:
-            os.nice(10)
-    except Exception:
-        # Priority is a courtesy, never a correctness requirement: a process we
-        # cannot demote should still be allowed to finish.
-        pass
-
-
-def _reencode_for_ae(filepath):
-    ffmpeg = _get_ffmpeg_bin()
-    if not ffmpeg or not os.path.exists(filepath):
-        return filepath
-    tmp = filepath + ".ae_fix.mp4"
-    proc = None
-    try:
-        proc = subprocess.Popen(
-            [ffmpeg] + _ae_reencode_args(filepath, tmp),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            **_reencode_process_kwargs(),
-        )
-        _lower_process_priority(proc)
-        # Timeout is enforced with communicate(timeout=) because Popen itself
-        # takes no timeout; on expiry the child is killed and reaped so a
-        # multi-gigabyte encode cannot outlive the download that started it.
-        try:
-            proc.communicate(timeout=AE_REENCODE_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            logger.warning("AE re-encode timed out after %ss for %s",
-                           AE_REENCODE_TIMEOUT, filepath)
-            return filepath
-        if proc.returncode != 0:
-            logger.warning("AE re-encode failed for %s", filepath)
-            return filepath
-        os.replace(tmp, filepath)
-        return filepath
-    except Exception as e:
-        logger.warning("AE re-encode error for %s: %s", filepath, e)
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return filepath
-
-
-def ensure_after_effects_compatibility(filepath, status_callback=None):
-    if not filepath or not os.path.exists(filepath):
-        return filepath
-    if status_callback:
-        try:
-            status_callback("Checking video compatibility...", "#f39c12")
-        except Exception:
-            pass
-    try:
-        if _needs_ae_reencode(filepath):
-            if status_callback:
-                try:
-                    status_callback("Re-encoding for After Effects compatibility...", "#f39c12")
-                except Exception:
-                    pass
-            return _reencode_for_ae(filepath)
-    except Exception as e:
-        logger.debug("Compatibility check error: %s", e)
-    return filepath
-
-
-def _latest_video_file(folder, before):
-    exts = (".mp4", ".webm", ".mkv", ".mov", ".m4v")
-    try:
-        files = [
-            (os.path.getmtime(str(p)), str(p))
-            for p in Path(folder).iterdir()
-            if p.is_file() and p.suffix.lower() in exts
-        ]
-    except Exception:
-        return None
-    if before:
-        new = [e for e in files if os.path.basename(e[1]) not in before]
-        pool = new or files
-    else:
-        pool = files
-    if not pool:
-        return None
-    mp4 = [e for e in pool if str(e[1]).lower().endswith(".mp4")]
-    return max(mp4 or pool)[1]
-
-
 def media_output_template(download_folder, url: str) -> str:
     """Default yt-dlp output template for a media download.
 
@@ -3676,11 +3418,6 @@ def download_video_mp4(
     try:
         status_callback("Downloading video...", "#f1c40f")
         _try_download(ydl_opts)
-        # Make the output editable in After Effects (re-encode when needed).
-        status_callback("Finalizing video...", "#3498db")
-        _compat = _latest_video_file(download_folder, video_files_before)
-        if _compat:
-            ensure_after_effects_compatibility(_compat, status_callback)
         _remove_new_thumbnail_files(download_folder, video_files_before)
         success_callback(download_folder)
     except DownloadCancelled:
