@@ -655,6 +655,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             'aep': self.tab_aep,
             'settings': self.tab_customization,
             'performance': self.tab_performance,
+            'updates': self.tab_updates,
         }
 
         # Every page is a card: same surface, same corner radius and same
@@ -663,7 +664,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # would flash a differently edged panel.
         for _page in (self.tab_downloader, self.tab_studio, self.tab_aep,
                       self.tab_customization, self.tab_performance,
-                      self.tab_queue, self.tab_history):
+                      self.tab_queue, self.tab_history, self.tab_updates):
             _page.configure(
                 fg_color=self._palette.get('surface', UITheme.SURFACE_BG),
                 corner_radius=UITheme.RADIUS_CARD,

@@ -1981,13 +1981,13 @@ class CustomThemeEditorTests(unittest.TestCase):
     def test_the_page_registry_matches_the_tab_attributes(self):
         """``_page_frames`` is what the theme-follow probe iterates.
 
-        It has to name the same seven pages ``show_frame`` can switch to, or the
+        It has to name the same eight pages ``show_frame`` can switch to, or the
         probe quietly stops covering a page. The probe itself asserts it found at
         least one scroll well, so it would stay green on a partial registry.
         """
         self.assertEqual(set(self.app._page_frames),
                          {'downloader', 'queue', 'history', 'studio',
-                          'settings', 'performance', 'aep'})
+                          'settings', 'performance', 'aep', 'updates'})
         for name, frame in self.app._page_frames.items():
             self.assertIsNotNone(frame, name)
         # And each entry really is the frame the matching tab attribute holds,
@@ -1998,7 +1998,8 @@ class CustomThemeEditorTests(unittest.TestCase):
                             ('studio', 'tab_studio'),
                             ('settings', 'tab_customization'),
                             ('performance', 'tab_performance'),
-                            ('aep', 'tab_aep')):
+                            ('aep', 'tab_aep'),
+                            ('updates', 'tab_updates')):
             self.assertIs(self.app._page_frames[name],
                           getattr(self.app, attr), name)
 
