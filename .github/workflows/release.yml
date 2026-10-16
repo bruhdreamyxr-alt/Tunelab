@@ -165,33 +165,34 @@ jobs:
             Installed copies check this Release automatically and update
             themselves.
 
-            ## What's new in 2.6.1
+            ## What's new in 2.7.0
 
-            ### The update banner is visible again (fix)
-            In 2.6.0 the startup update offer rendered as an empty strip:
-            the banner's builder moved modules and the frame's pack() call
-            was left behind, so the buttons existed but nothing showed.
-            Restored, with a test that pins the layout itself rather than
-            the button text.
+            ### Update Center — the one place to update
+            A new Updates page (rail icon, Ctrl+8) shows your installed
+            version, when you last checked, a Check now button, the newest
+            release's notes, and a link to all releases. The Speed tab's
+            duplicate "Check for App Updates" button is gone: the Update
+            Center is the only place the app updates from.
 
-            ### Skip this version
-            The banner now carries a third answer — Skip this version. The
-            daily startup check goes quiet for exactly that version and
-            speaks up again when a newer one ships. **Check for App
-            Updates** still offers it whenever you ask directly.
+            ### Undo skip
+            "Skip this version" on the startup banner can be taken back.
+            The Update Center shows which version is being skipped and
+            offers it again with one click.
 
-            ### See what's changing before you update
-            The banner now shows the release notes under a "What's new"
-            expander — a trimmed preview by default, the full changelog one
-            click away.
+            ### Download history on a real database
+            History now lives in SQLite alongside the old JSON file:
+            thousands of entries instead of 200, with the same search,
+            sort and paging. Existing history imports itself the first
+            time the page opens, and Clear and Prune cover both stores.
 
-            ### Smaller
-            * Update checks log the remote and local versions on every
-              outcome, so a recurring-update report can be diagnosed from
-              the log instead of guessed at.
-            * The history count says "12 of 240 entries" while a search
-              filters, instead of a bare "12".
-            * Queue rows mark a truncated title with an ellipsis, so a cut
-              is distinguishable from the whole name.
+            ### A mark of its own
+            The Updates row and page carry a drawn sparkle instead of the
+            generic refresh arc.
+
+            ### Under the hood
+            The queue, history and update code moved out of the
+            5,900-line ui.py into a pages/ package (ui.py is under 4,500
+            lines now); every guard reads the whole UI, so behaviour is
+            unchanged.
 
 # Google Drive is being retired rather than mirrored to - see RELEASE.md.

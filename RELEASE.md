@@ -43,8 +43,8 @@ fix. If you see that error, either bump `version.py` or re-tag.
 
 | File | Who it is for |
 |---|---|
-| `mysetup261.exe` | Windows installer — a fresh install |
-| `UniversalAudioStudio_2.6.1_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
+| `mysetup270.exe` | Windows installer — a fresh install |
+| `UniversalAudioStudio_2.7.0_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
 
 The macOS build was removed, so a Release now carries Windows files only.
 
@@ -57,7 +57,9 @@ Release, compares its version against the running app's, and when it is newer
 downloads the `_update.zip` from that Release and installs it in place (Windows
 shows a UAC prompt when the app lives under `Program Files`; per-user
 installs update with no prompt). That happens
-once at startup and whenever **Check for App Updates** is pressed.
+once at startup, whenever the **Update Center** page's *Check for
+updates* button is pressed, and through the startup banner's *Update
+now*.
 
 There is no manifest to maintain and no upload step: the Release you published
 *is* the update source. Only two things matter:

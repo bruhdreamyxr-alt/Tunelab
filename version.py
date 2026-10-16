@@ -16,5 +16,11 @@
 # (the builder moved to ui_widgets.py and left the frame's pack() behind).
 # It also adds "Skip this version" to the banner and shows the release
 # notes inline, so an update can be judged before it is taken.
+#
+# 2.7.0 is the Update Center release: a dedicated Updates page that is the
+# only place the app updates from (the Speed tab's duplicate button is
+# gone), "Skip this version" undone from there, release notes browsable on
+# the page, and download history moved onto a SQLite database that
+# imports the old JSON entries itself.
 
-__version__ = "2.6.1"
+__version__ = "2.7.0"
