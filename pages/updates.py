@@ -1,8 +1,11 @@
-"""The Update Center page: check, review, and install app updates.
+"""The Update Center page: check, review, and install updates.
 
-Everything update-related lives here - the page itself plus the startup
-nag, the inline banner and the macOS download flow that used to sit in
-ui.py - so the shell only wires prefs and the rail.
+Everything update-related lives here - the app updater, the engine
+(yt-dlp) updater, the startup nag, the inline banner and the macOS
+download flow that used to sit in ui.py - so the shell only wires
+prefs and the rail. The Performance page keeps non-update maintenance
+(clearing the cache) only; "single update surface" has to mean all
+updates or it means nothing.
 """
 
 import logging
@@ -17,6 +20,7 @@ import customtkinter as ctk
 from ui_theme import UITheme, _mix, _paint_icon
 from ui_widgets import build_update_banner
 import download_queue
+import downloader
 
 
 logger = logging.getLogger("universal_audio_studio.pages.updates")
@@ -31,7 +35,9 @@ class UpdatesPageMixin:
     _prefs: Any
     _set_pref: Any
     _settings_card: Any
+    _show_error_dialog: Any
     _show_info_dialog: Any
+    _show_success_dialog: Any
     _start_worker: Any
     _style_button: Any
     _update_banner: Any
@@ -41,6 +47,7 @@ class UpdatesPageMixin:
     content_frame: Any
     show_toast: Any
     tab_updates: Any
+    update_dl_detail: Any
     update_dl_status: Any
 
     def _check_macos_update(self):
@@ -342,7 +349,27 @@ class UpdatesPageMixin:
         releases_btn.pack(side="left", padx=(8, 0))
         self._style_button(releases_btn, "secondary")
 
-        # Card 2: a version the user skipped, with the way back. The skip
+        # Card 2: the downloader engine. Extractor rot is the operational
+        # risk of this app, so the engine gets the same status + action
+        # treatment the app itself gets - on the one update surface. The
+        # startup probe paints these through guarded setters because this
+        # page is built lazily and the probe can marshal back before
+        # anyone has visited it.
+        engine = self._settings_card(scroll, "Downloader engine (yt-dlp)")
+        engine.pack(fill="x", padx=0, pady=(0, 8))
+        self.ytdlp_update_btn = ctk.CTkButton(
+            engine, text="⮔ Update yt-dlp", width=200, cursor="hand2",
+            command=self.update_ytdlp_clicked,
+        )
+        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(4, 1))
+        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
+        self.ytdlp_ver_lbl = ctk.CTkLabel(
+            engine,
+            text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
+            font=UITheme.F(10), text_color="#95a5a6", anchor="w")
+        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Card 3: a version the user skipped, with the way back. The skip
         # button on the banner was otherwise permanent-until-a-newer-release
         # with no way to undo it from inside the app.
         self.updates_skip_card = self._settings_card(scroll, "Skipped update")
@@ -358,7 +385,7 @@ class UpdatesPageMixin:
         self._updates_last_release = None
         self._updates_sync_skip_card()
 
-        # Card 3: the newest release's notes, kept where they can be re-read
+        # Card 4: the newest release's notes, kept where they can be re-read
         # instead of only flashing inside the banner's expander once.
         notes = self._settings_card(scroll, "What's new")
         notes.pack(fill="x", padx=0, pady=(0, 8))
@@ -534,3 +561,141 @@ class UpdatesPageMixin:
     def _updates_open_releases(self):
         import updater  # local module
         webbrowser.open(updater.RELEASES_PAGE)
+
+    # ------------------------------------------------------------------
+    # The engine (yt-dlp) updater. Moved here from ui.py/Performance so
+    # the "single update surface" doctrine covers the engine too - the
+    # startup probe used to tell users to go find a button on another
+    # tab, and its label refresh raised whenever the probe beat the
+    # lazy page build.
+    # ------------------------------------------------------------------
+
+    def _ytdlp_label_set(self, text: str, color=None):
+        """Paint the engine version line if the Update Center has been built.
+
+        The startup probe marshals to the main thread and can fire before
+        anyone has visited this page; configuring a widget that does not
+        exist yet raised inside an after() callback, where the exception
+        only hit the console and the label kept whatever text it had.
+        """
+        label = getattr(self, "ytdlp_ver_lbl", None)
+        if label is None:
+            return
+        try:
+            if color:
+                label.configure(text=text, text_color=color)
+            else:
+                label.configure(text=text)
+        except Exception:
+            logger.debug("Could not paint the yt-dlp version line",
+                         exc_info=True)
+
+    def _ytdlp_btn_set(self, **kwargs):
+        """Reconfigure the engine update button if the page has been built."""
+        btn = getattr(self, "ytdlp_update_btn", None)
+        if btn is None:
+            return
+        try:
+            btn.configure(**kwargs)
+        except Exception:
+            logger.debug("Could not reconfigure the yt-dlp update button",
+                         exc_info=True)
+
+    def _ytdlp_update_check_worker(self, force: bool = False):
+        """Background startup probe: warn only if a yt-dlp update is available.
+
+        Rate-limited to once per day so we don't hit GitHub on every
+        launch; force=True bypasses the throttle - the update click uses
+        it to repaint the version line, where the throttle would
+        otherwise leave the label frozen at "Updating yt-dlp..." until
+        the marker rolls over.
+        """
+        if not force and download_queue._update_check_done_today('ytdlp'):
+            logger.debug("yt-dlp update check already ran today; skipping")
+            return
+        try:
+            res = downloader.check_ytdlp_update_available(timeout=10.0)
+        except Exception as e:
+            logger.debug("yt-dlp update check failed: %s", e)
+            return
+        download_queue._mark_update_check_done('ytdlp')
+
+        status = res.get("status")
+        local = res.get("local")
+        latest = res.get("latest")
+
+        def refresh_label():
+            # Rebuild the friendly version label text based on probe result,
+            # through the guard: this page builds lazily on first visit.
+            if status == "update" and local and latest:
+                self._ytdlp_label_set(
+                    f"yt-dlp: {local} -> {latest} (update available!)",
+                    "#f39c12")
+            elif status == "current" and local:
+                self._ytdlp_label_set(f"yt-dlp version: {local}", "#27ae60")
+            else:
+                # "unknown" or not-detected: stay neutral, don't spam user.
+                self._ytdlp_label_set(
+                    f"yt-dlp version: {local or 'not detected'}", "#95a5a6")
+
+        # Always refresh the label on the main thread first (non-blocking).
+        self.after(0, refresh_label)
+
+        # Only push the nudge when an update is genuinely available - and
+        # point at the one surface that can install it.
+        if status == "update" and local and latest:
+            def push_banner():
+                self.update_dl_detail(
+                    f"yt-dlp update available ({local} -> {latest}). Open the "
+                    f"Update Center (Ctrl+8) to install it.",
+                    "#f39c12",
+                )
+                # The detail label only lives on the Downloader tab; a toast
+                # carries the same notice to whatever tab is on screen.
+                self.show_toast(
+                    f"yt-dlp update available ({local} -> {latest}) - see "
+                    f"the Update Center (Ctrl+8).",
+                    "warning",
+                    duration=6000,
+                )
+            self.after(0, push_banner)
+
+    def update_ytdlp_clicked(self):
+        self._ytdlp_btn_set(state="disabled", text="Updating...")
+        self._ytdlp_label_set("Updating yt-dlp...")
+
+        def worker():
+            try:
+                msg = downloader.update_ytdlp(
+                    status_callback=lambda text, color: self.after(
+                        0, lambda t=text: self._ytdlp_label_set(t))
+                )
+                # The pip output is long and technical: keep a short headline in
+                # the body and push the raw log into the copyable detail box.
+                if "already up to date" in msg.lower():
+                    self.after(0, lambda: self._show_info_dialog(
+                        "yt-dlp Updater", "yt-dlp is already up to date.",
+                        detail=msg))
+                elif "updated" in msg.lower() and "fail" not in msg.lower():
+                    self.after(0, lambda: self._show_success_dialog(
+                        "yt-dlp Updater", "Update successful. Restart the app to use the new version.",
+                        detail=msg))
+                else:
+                    self.after(0, lambda: self._show_info_dialog(
+                        "yt-dlp Updater", "The updater finished — check the details.",
+                        detail=msg))
+                # force=True: the daily throttle would skip a plain re-run
+                # and leave the version line frozen at "Updating yt-dlp...".
+                self.after(0, lambda: self._ytdlp_update_check_worker(force=True))
+            except Exception as e:
+                logger.exception("yt-dlp update failed")
+                # Bind the message now: `e` is deleted when the except block
+                # ends, and this lambda runs on the next mainloop turn, so
+                # str(e) inside it raised NameError and the user saw nothing.
+                err_text = str(e)
+                self.after(0, lambda: self._show_error_dialog(
+                    "Update Error", "Failed to update yt-dlp.", detail=err_text))
+            finally:
+                self.after(0, lambda: self._ytdlp_btn_set(
+                    state="normal", text="⮔ Update yt-dlp"))
+        self._start_worker(worker)

@@ -2913,7 +2913,8 @@ class DeferredExceptionBindingTests(unittest.TestCase):
         problems = []
         for name in ("ui.py", "ui_theme.py", "ui_widgets.py", "main.py",
                      "downloader.py", "download_queue.py", "updater.py",
-                     "tag_editor.py"):
+                     "tag_editor.py", "library_db.py",
+                     "pages/queue.py", "pages/history.py", "pages/updates.py"):
             path = _REPO / name
             tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
             for handler in (n for n in ast.walk(tree)
@@ -2939,7 +2940,13 @@ class DeferredExceptionBindingTests(unittest.TestCase):
         self.test_no_deferred_lambda_reads_the_except_variable()
 
     def test_the_two_known_sites_bind_their_message(self):
-        src = (_REPO / "ui.py").read_text(encoding="utf-8")
+        # The yt-dlp updater moved to the Update Center page; the cache
+        # clear still lives in the shell. Both keep the err_text binding,
+        # so both must be searched (the corpus rule applies to guards).
+        pages_src = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in sorted((_REPO / "pages").glob("*.py")))
+        src = (_REPO / "ui.py").read_text(encoding="utf-8") + pages_src
         self.assertIn('"Update Error", "Failed to update yt-dlp.", detail=err_text',
                       src)
         self.assertIn('_show_error_dialog("Cache Clear Error", err_text)', src)

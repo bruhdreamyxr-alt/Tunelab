@@ -1,10 +1,12 @@
-"""The Update Center page: wiring, the check flow, and the skip round-trip.
+"""The Update Center page: wiring, the check flow, the skip round-trip, and
+the engine (yt-dlp) surface.
 
 Guards live next to the page (pages/updates.py) because the wiring it pins
-- lazy build, rail row, shortcut, declared prefs - is spread across the
-shell and the page module, and each one fails silently when missing: a
-page nobody can reach, a stamp that reads "never" after every restart, a
-check that touches Tk from a worker thread.
+- lazy build, rail row, shortcut, declared prefs, the engine updater -
+is spread across the shell and the page module, and each one fails
+silently when missing: a page nobody can reach, a stamp that reads
+"never" after every restart, a check that touches Tk from a worker
+thread, an engine update stranded on another tab.
 """
 
 import pathlib
@@ -146,6 +148,80 @@ class SingleUpdateSurfaceTests(unittest.TestCase):
         self.assertIn("def _app_update_btn_set(", wsrc)
         self.assertIn("self._app_update_btn_set(", wsrc)
         self.assertIn("self._app_update_btn_set(", _source())
+
+
+class EngineUpdateSurfaceTests(unittest.TestCase):
+    """yt-dlp is the app's engine; its update belongs on the one surface."""
+
+    def test_the_engine_card_lives_on_the_update_center_page(self):
+        body = _method_source("build_updates_view")
+        self.assertIn(
+            'self._settings_card(scroll, "Downloader engine (yt-dlp)")', body)
+        self.assertIn("self.ytdlp_update_btn = ctk.CTkButton(", body)
+        self.assertIn("command=self.update_ytdlp_clicked", body)
+        self.assertIn("self.ytdlp_ver_lbl = ctk.CTkLabel(", body)
+
+    def test_the_performance_page_no_longer_offers_engine_updates(self):
+        # Single surface means all updates: a button buried on the
+        # Performance tab is how a stale engine survived for weeks.
+        body = _method_source("build_performance_view")
+        self.assertNotIn("ytdlp_update_btn", body)
+        self.assertNotIn("ytdlp_ver_lbl", body)
+        # The maintenance card keeps its non-update action.
+        self.assertIn("clear_cache_btn", body)
+
+    def test_the_flows_moved_with_the_widgets(self):
+        src = _source()
+        self.assertEqual(src.count("def update_ytdlp_clicked("), 1)
+        self.assertEqual(src.count("def _ytdlp_update_check_worker("), 1)
+        psrc = (PROJECT_DIR / "pages" / "updates.py").read_text(
+            encoding="utf-8")
+        usrc = (PROJECT_DIR / "ui.py").read_text(encoding="utf-8")
+        self.assertIn("def update_ytdlp_clicked(", psrc)
+        self.assertIn("def _ytdlp_update_check_worker(", psrc)
+        self.assertNotIn("def update_ytdlp_clicked(", usrc)
+        self.assertNotIn("def _ytdlp_update_check_worker(", usrc)
+
+    def test_the_nudge_points_at_the_update_center(self):
+        # The old toast sent users hunting for a button on another tab.
+        body = _method_source("_ytdlp_update_check_worker")
+        self.assertNotIn("Performance tab", body)
+        self.assertIn("Update Center", body)
+
+    def test_both_flows_stay_off_the_ui_thread(self):
+        self.assertIn("self._start_worker(worker)",
+                      _method_source("update_ytdlp_clicked"))
+        self.assertIn("self.after(0,",
+                      _method_source("update_ytdlp_clicked"))
+
+
+class EngineProbeGuardTests(unittest.TestCase):
+    """Two silent-failure bugs the move had to fix, pinned so they stay fixed."""
+
+    def test_the_probe_paints_through_a_guard_for_an_unbuilt_page(self):
+        # The startup probe marshals to the main thread; the page builds
+        # lazily on first visit. A bare self.ytdlp_ver_lbl.configure raised
+        # inside an after() callback, where only the console ever saw it.
+        worker = _method_source("_ytdlp_update_check_worker")
+        self.assertIn("self._ytdlp_label_set(", worker)
+        self.assertNotIn("self.ytdlp_ver_lbl.configure(", worker)
+        guard = _method_source("_ytdlp_label_set")
+        self.assertIn('getattr(self, "ytdlp_ver_lbl", None)', guard)
+
+    def test_the_click_handler_also_paints_and_reenables_through_guards(self):
+        body = _method_source("update_ytdlp_clicked")
+        self.assertIn("self._ytdlp_btn_set(", body)
+        self.assertIn("self._ytdlp_label_set(", body)
+        self.assertNotIn("self.ytdlp_update_btn.configure(", body)
+        self.assertNotIn("self.ytdlp_ver_lbl.configure(", body)
+
+    def test_a_completed_update_repaints_even_when_the_probe_was_throttled(self):
+        # After an update the click flow re-runs the probe with force=True:
+        # the daily throttle would skip a plain re-run and leave the label
+        # frozen at "Updating yt-dlp..." until the marker rolls over.
+        self.assertIn("force=True", _method_source("update_ytdlp_clicked"))
+        self.assertIn("not force",
+                      _method_source("_ytdlp_update_check_worker"))
 
 
 if __name__ == "__main__":

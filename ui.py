@@ -1730,101 +1730,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         self.update_dl_detail(f"Audio format set to {fmt_label}.", "#95a5a6")
 
-    def _ytdlp_update_check_worker(self):
-        """Background startup probe: warn only if a yt-dlp update is available.
-
-        Rate-limited to once per day so we don't hit GitHub on every launch.
-        """
-        if download_queue._update_check_done_today('ytdlp'):
-            logger.debug("yt-dlp update check already ran today; skipping")
-            return
-        try:
-            res = downloader.check_ytdlp_update_available(timeout=10.0)
-        except Exception as e:
-            logger.debug("yt-dlp update check failed: %s", e)
-            return
-        download_queue._mark_update_check_done('ytdlp')
-
-        status = res.get("status")
-        local = res.get("local")
-        latest = res.get("latest")
-
-        def refresh_label():
-            # Rebuild the friendly version label text based on probe result.
-            if status == "update" and local and latest:
-                self.ytdlp_ver_lbl.configure(
-                    text=f"yt-dlp: {local} -> {latest} (update available!)",
-                    text_color="#f39c12",
-                )
-            elif status == "current" and local:
-                self.ytdlp_ver_lbl.configure(
-                    text=f"yt-dlp version: {local}",
-                    text_color="#27ae60",
-                )
-            else:
-                # "unknown" or not-detected: stay neutral, don't spam user.
-                self.ytdlp_ver_lbl.configure(
-                    text=f"yt-dlp version: {local or 'not detected'}",
-                    text_color="#95a5a6",
-                )
-
-        # Always refresh the label on the main thread first (non-blocking).
-        self.after(0, refresh_label)
-
-        # Only push the nudge banner when an update is genuinely available.
-        if status == "update" and local and latest:
-            def push_banner():
-                self.update_dl_detail(
-                    f"yt-dlp update available ({local} -> {latest}). Click the "
-                    f"Update button in the Performance tab.",
-                    "#f39c12",
-                )
-                # The detail label only lives on the Downloader tab; a toast
-                # carries the same notice to whatever tab is on screen.
-                self.show_toast(
-                    f"yt-dlp update available ({local} -> {latest}) — see the Performance tab.",
-                    "warning",
-                    duration=6000,
-                )
-            self.after(0, push_banner)
-
-
-    def update_ytdlp_clicked(self):
-        self.ytdlp_update_btn.configure(state="disabled", text="Updating...")
-        self.ytdlp_ver_lbl.configure(text="Updating yt-dlp...")
-        def worker():
-            try:
-                msg = downloader.update_ytdlp(
-                    status_callback=lambda text, color: self.after(0, lambda: self.ytdlp_ver_lbl.configure(text=text))
-                )
-                # The pip output is long and technical: keep a short headline in
-                # the body and push the raw log into the copyable detail box.
-                if "already up to date" in msg.lower():
-                    self.after(0, lambda: self._show_info_dialog(
-                        "yt-dlp Updater", "yt-dlp is already up to date.",
-                        detail=msg))
-                elif "updated" in msg.lower() and "fail" not in msg.lower():
-                    self.after(0, lambda: self._show_success_dialog(
-                        "yt-dlp Updater",
-                        "Update successful. Restart the app to use the new version.",
-                        detail=msg))
-                else:
-                    self.after(0, lambda: self._show_info_dialog(
-                        "yt-dlp Updater", "The updater finished — check the details.",
-                        detail=msg))
-                self.after(0, lambda: self._ytdlp_update_check_worker())
-            except Exception as e:
-                logger.exception("yt-dlp update failed")
-                # Bind the message now: `e` is deleted when the except block
-                # ends, and this lambda runs on the next mainloop turn, so
-                # str(e) inside it raised NameError and the user saw nothing.
-                err_text = str(e)
-                self.after(0, lambda: self._show_error_dialog(
-                    "Update Error", "Failed to update yt-dlp.", detail=err_text))
-            finally:
-                self.after(0, lambda: self.ytdlp_update_btn.configure(state="normal", text="⮔ Update yt-dlp"))
-        self._start_worker(worker)
-
     def _do_self_restart(self):
         """Graceful shutdown so the updater can replace the running EXE."""
         self._ui_closed = True
@@ -2663,20 +2568,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         maint = self._settings_card(scroll, "Maintenance")
         maint.pack(fill="x", padx=0, pady=(0, 0))
 
-        self.ytdlp_update_btn = ctk.CTkButton(
-            maint, text="Update yt-dlp", width=260,
-            cursor="hand2", command=self.update_ytdlp_clicked,
-        )
-        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(4, 1))
-        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
-        self.ytdlp_ver_lbl = ctk.CTkLabel(
-            maint, text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
-            font=UITheme.F(10), text_color="#95a5a6", anchor="w",
-        )
-        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 2))
-
-        # App updates live on the Update Center page (Ctrl+8) only; this
-        # card keeps the tool-maintenance actions (yt-dlp, cache).
+        # Updates - app and engine alike - live on the Update Center page
+        # (Ctrl+8) only; this card keeps the non-update maintenance action.
         self.clear_cache_btn = ctk.CTkButton(
             maint, text="Clear Download Cache", width=260,
             command=self.clear_download_cache,
