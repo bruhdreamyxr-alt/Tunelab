@@ -57,6 +57,67 @@ requires_ctk = unittest.skipUnless(
     _HAS_CTK, "customtkinter/Tk is unavailable in this environment")
 
 
+def _app_is_alive(app) -> bool:
+    """Is *app* still a window? A destroyed one raises on every Tk call."""
+    if app is None:
+        return False
+    try:
+        return bool(app.winfo_exists())
+    except Exception:
+        return False
+
+
+def _destroy_app(app) -> None:
+    """Destroy a test window quietly.
+
+    Tk deletes the Tcl commands behind a window's callbacks when the window
+    dies, but the timer events themselves stay pending: every ``after()``
+    still scheduled (the 3s startup update check, the queue-drain poll, toast
+    dismissals) fires afterwards and prints "invalid command name" at the
+    interpreter - hundreds of lines of that across a suite run. Cancel the
+    window's own pending timers first, then destroy.
+    """
+    if app is None:
+        return
+    try:
+        pending = app.tk.call("after", "info") or ()
+    except Exception:
+        pending = ()
+    for after_id in pending:
+        try:
+            app.after_cancel(after_id)
+        except Exception:
+            pass
+    try:
+        app.destroy()
+    except Exception:
+        pass
+
+
+def _destroy_class_app(cls) -> None:
+    """Class-cleanup callback: destroy whichever window *cls* ends up holding.
+
+    Rebuild/reopen tests swap ``cls.app`` for a newer instance, so the cleanup
+    must look the attribute up at teardown time, not capture the first one.
+    """
+    _destroy_app(getattr(cls, "app", None))
+    cls.app = None
+
+
+def _quiet_startup_check():
+    """A patcher that no-ops the app's 3s auto-update check; caller stops it.
+
+    ui schedules ``after(3000, self._check_updates_on_startup)`` in
+    ``__init__``, which binds the method right where the timer is created, so
+    the patch must run *before* the window is built. Per-test windows used to
+    die before the timer fired - that post-destroy firing was noise. A window
+    shared by a whole class lives long enough for the real check to reach the
+    network and push an update banner mid-class, so pin it to a no-op.
+    """
+    return mock.patch.object(
+        ui.UniversalAudioStudio, "_check_updates_on_startup", lambda self: None)
+
+
 def _source() -> str:
     """The UI's source, across the modules it now lives in.
 
@@ -149,10 +210,7 @@ class PasteAnywhereTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        try:
-            cls.app.destroy()
-        except Exception:
-            pass
+        _destroy_app(cls.app)
 
     def setUp(self):
         self.app.clipboard_clear()
@@ -1508,10 +1566,7 @@ class RailKeyboardTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        try:
-            cls.app.destroy()
-        except Exception:
-            pass
+        _destroy_app(cls.app)
 
     def test_every_rail_row_is_on_the_tab_order(self):
         app = self.app
@@ -1896,57 +1951,78 @@ class CustomPaletteTests(unittest.TestCase):
 class CustomThemeEditorTests(unittest.TestCase):
     """The custom editor wired into the running window."""
 
-    def setUp(self):
-        # Redirect prefs into a temp file for the whole construction, not just
-        # the writes: set_custom_role persists, and the default path is the real
+    @classmethod
+    def setUpClass(cls):
+        if not _HAS_CTK:
+            raise unittest.SkipTest(
+                "customtkinter/Tk is unavailable in this environment")
+        # Redirect prefs into a temp file for the whole class, not just the
+        # writes: set_custom_role persists, and the default path is the real
         # ui_prefs.json beside ui.py when running from source. Without this the
         # suite both rewrites the user's saved settings and *reads* whatever a
         # previous run left there, so a test could pass on one machine and fail
         # on the next. Patching the path resolver is the only seam that covers
-        # the load in __init__ as well as every later save.
-        self._tmpdir = tempfile.TemporaryDirectory()
-        temp_pref = os.path.join(self._tmpdir.name, "ui_prefs.json")
-        # Bound via a default argument, not `self`: as a method the lambda's
-        # `self` is the *app*, which would shadow this TestCase.
-        patcher = mock.patch.object(
+        # the load in __init__ as well as every later save - and since saves go
+        # to the path cached at construction, the patch must be live before the
+        # window is built.
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        temp_pref = os.path.join(cls._tmpdir.name, "ui_prefs.json")
+        # Bound via a default argument, not `cls`/`self`: as a method the
+        # lambda's `self` is the *app*, which would shadow the TestCase.
+        cls._patcher = mock.patch.object(
             ui.UniversalAudioStudio, "_get_pref_path",
             lambda _app, _p=temp_pref: _p)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.app = ui.UniversalAudioStudio()
-        self.app.withdraw()
-        # The editor lives on the settings page, which is now built lazily on
+        cls._patcher.start()
+        cls.addClassCleanup(cls._patcher.stop)
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.addClassCleanup(cls._startup_patch.stop)
+        # One window for the whole class: construction (plus the settings-page
+        # build) dominated this suite at ~2.7s per test, and every assertion
+        # here either seeds its own state or rebuilds around the prefs file it
+        # wants to observe - only those two rebuilds need their own window.
+        cls.addClassCleanup(_destroy_class_app, cls)
+        cls.app = cls._build()
+
+    @classmethod
+    def _build(cls):
+        """The window under test, standing on the class's temp prefs file."""
+        app = ui.UniversalAudioStudio()
+        app.withdraw()
+        # The editor lives on the settings page, which is built lazily on
         # first visit; tests reach its widgets without navigating, so visit for
         # them. show_frame would work too but drags in a visible page switch.
-        self.app._ensure_page_built("settings")
+        # _ensure_page_built is a no-op once built, so it stays safe on a
+        # window that already has the page up.
+        app._ensure_page_built("settings")
+        app.update_idletasks()
+        return app
+
+    def setUp(self):
+        # The shared window may have been swapped for a rebuild in an earlier
+        # test - or destroyed outright by one that failed halfway - so rebind
+        # to whatever is live, and only build when nothing is.
+        if not _app_is_alive(type(self).app):
+            type(self).app = type(self)._build()
+        self.app = type(self).app
         self.app.update_idletasks()
         self._pref_path = self.app._pref_path
-
-    def tearDown(self):
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
-        self._tmpdir.cleanup()
 
     def _rebuild_with_prefs(self, prefs):
         """Reconstruct the app against a given prefs dict.
 
         The load happens in __init__, so a test that wants to observe how a
-        prefs file is read has to stand the window up again around it. The first
-        instance is torn down first so the temp file is not left open by a
-        lingering Tk.
+        prefs file is read has to stand the window up again around it. The
+        shared window is torn down first so the temp file is not left open by
+        a lingering Tk, and ``cls.app`` follows the new instance so the next
+        test binds a live window instead of the dead one.
         """
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
+        _destroy_app(type(self).app)
         with open(self._pref_path, "w", encoding="utf-8") as fh:
             json.dump(prefs, fh)
-        self.app = ui.UniversalAudioStudio()
-        self.app.withdraw()
-        self.app._ensure_page_built("settings")
-        self.app.update_idletasks()
+        app = type(self)._build()
+        type(self).app = app
+        self.app = app
         return self.app
 
     def test_a_derived_role_saved_by_an_older_build_is_dropped_on_load(self):
@@ -2072,8 +2148,12 @@ class CustomThemeEditorTests(unittest.TestCase):
         entry.delete(0, 'end')
         entry.insert(0, 'not a colour')
         toasts = []
-        self.app.show_toast = lambda *a, **k: toasts.append(a)
-        self.app._commit_custom_hex('accent')
+        # Patched per test rather than assigned: the window is shared, so a
+        # bare instance attribute would shadow show_toast for every later
+        # test in this class. mock restores the bound method on exit.
+        with mock.patch.object(self.app, "show_toast",
+                               lambda *a, **k: toasts.append(a)):
+            self.app._commit_custom_hex('accent')
         self.assertEqual(self.app._palette['accent'], before)
         self.assertTrue(toasts, 'an invalid value must say so')
 
@@ -2244,19 +2324,37 @@ class PerformanceSettingsPersistTests(unittest.TestCase):
     after that removed it from the file entirely.
     """
 
-    def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self._pref = os.path.join(self._tmpdir.name, "ui_prefs.json")
-        with open(self._pref, "w", encoding="utf-8") as fh:
+    @classmethod
+    def setUpClass(cls):
+        if not _HAS_CTK:
+            raise unittest.SkipTest(
+                "customtkinter/Tk is unavailable in this environment")
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._pref = os.path.join(cls._tmpdir.name, "ui_prefs.json")
+        with open(cls._pref, "w", encoding="utf-8") as fh:
             fh.write("{}")
-        patcher = mock.patch.object(
+        # One prefs file for the class, patched before the first window is
+        # built: loads re-resolve the path on every read but saves go to the
+        # path cached in __init__, so a shared window only stays consistent
+        # while the path itself never changes.
+        cls._patcher = mock.patch.object(
             ui.UniversalAudioStudio, "_get_pref_path",
-            lambda _app, _p=self._pref: _p)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.app = self._build()
+            lambda _app, _p=cls._pref: _p)
+        cls._patcher.start()
+        cls.addClassCleanup(cls._patcher.stop)
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.addClassCleanup(cls._startup_patch.stop)
+        cls.addClassCleanup(_destroy_class_app, cls)
+        # Only the first window is shared: eight of the nine tests reopen the
+        # window anyway (a restart is what they are about), and their *first*
+        # window is the one the previous test reopened - but the construction
+        # every setUp used to do on top of that was pure overhead, most of all
+        # for the source-level test that never touches a widget.
+        cls.app = cls._build()
 
-    def _build(self):
+    @classmethod
+    def _build(cls):
         app = ui.UniversalAudioStudio()
         app.withdraw()
         # The controls under test live on the performance page, which builds on
@@ -2265,21 +2363,27 @@ class PerformanceSettingsPersistTests(unittest.TestCase):
         app.update_idletasks()
         return app
 
+    def setUp(self):
+        # The clean slate each test used to get from a fresh window plus a
+        # fresh prefs file: wipe the file, and - because a failure can leave
+        # no window behind - stand one back up if the previous test destroyed
+        # it without reopening. In-memory state carried across tests cannot
+        # satisfy any assertion here: every test writes the value it then
+        # re-reads itself, from slider positions to on-disk keys.
+        with open(type(self)._pref, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        if not _app_is_alive(type(self).app):
+            type(self).app = type(self)._build()
+        self.app = type(self).app
+        self._pref = type(self)._pref
+
     def _reopen(self):
         """Close the window and stand a fresh one up on the same prefs file."""
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
-        self.app = self._build()
-        return self.app
-
-    def tearDown(self):
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
-        self._tmpdir.cleanup()
+        _destroy_app(type(self).app)
+        app = type(self)._build()
+        type(self).app = app
+        self.app = app
+        return app
 
     def test_the_fragment_slider_keeps_its_value_across_a_restart(self):
         self.app.concurrent_frag_slider.set(24)
@@ -2852,17 +2956,26 @@ def _new_app():
 class ScrollbarVisibilityTests(unittest.TestCase):
     """Scrollbars are invisible until the pointer reaches them."""
 
+    @classmethod
+    def setUpClass(cls):
+        if not _HAS_CTK:
+            raise unittest.SkipTest(
+                "customtkinter/Tk is unavailable in this environment")
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.addClassCleanup(cls._startup_patch.stop)
+        cls.addClassCleanup(_destroy_class_app, cls)
+        cls.app = _new_app()
+
     @requires_ctk
     def setUp(self):
-        self.app = _new_app()
-        self.addCleanup(self._destroy)
+        # One window for the whole class: nothing here depends on a fresh one,
+        # and four constructions per test dominated this suite's tail. The
+        # well is re-found per test because show_frame is cheap.
+        if not _app_is_alive(type(self).app):
+            type(self).app = _new_app()
+        self.app = type(self).app
         self.frame, self.bar, self.canvas = self._first_well("settings")
-
-    def _destroy(self):
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
 
     def _first_well(self, page):
         self.app.show_frame(page)
@@ -2919,16 +3032,29 @@ class ScrollbarVisibilityTests(unittest.TestCase):
 class UpdateBannerTests(unittest.TestCase):
     """The update notice is inline and non-blocking, not a modal dialog."""
 
+    @classmethod
+    def setUpClass(cls):
+        if not _HAS_CTK:
+            raise unittest.SkipTest(
+                "customtkinter/Tk is unavailable in this environment")
+        # Patched before the window exists: the 3s auto-check is bound when
+        # it is scheduled, and if it runs for real it may offer - and so
+        # *show* - an update mid-class, which no per-test hiding could make
+        # deterministic.
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.addClassCleanup(cls._startup_patch.stop)
+        cls.addClassCleanup(_destroy_class_app, cls)
+        cls.app = _new_app()
+
     @requires_ctk
     def setUp(self):
-        self.app = _new_app()
-        self.addCleanup(self._destroy)
-
-    def _destroy(self):
-        try:
-            self.app.destroy()
-        except Exception:
-            pass
+        if not _app_is_alive(type(self).app):
+            type(self).app = _new_app()
+        self.app = type(self).app
+        # Every test starts from the banner being down, as at a fresh launch:
+        # earlier tests on the shared window leave their offer standing.
+        self.app._hide_update_banner()
 
     def _buttons(self):
         banner = self.app._update_banner
@@ -2939,6 +3065,12 @@ class UpdateBannerTests(unittest.TestCase):
 
     @requires_ctk
     def test_it_starts_hidden(self):
+        # The claim is about a *fresh launch*, and this class's shared window
+        # has already been offered updates by earlier tests - so this one test
+        # trades for a brand-new window, which is what every test used to get.
+        _destroy_app(type(self).app)
+        type(self).app = _new_app()
+        self.app = type(self).app
         self.assertFalse(self.app._update_banner.winfo_manager())
 
     @requires_ctk
