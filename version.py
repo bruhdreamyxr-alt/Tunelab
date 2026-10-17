@@ -22,5 +22,16 @@
 # gone), "Skip this version" undone from there, release notes browsable on
 # the page, and download history moved onto a SQLite database that
 # imports the old JSON entries itself.
+#
+# 2.8.0 puts every updater on that one surface and makes the app keep
+# itself working. The downloader engine (yt-dlp) gets its own card on the
+# Update Center with a live version line - it used to sit on the Speed tab
+# with a startup note pointing users at the wrong page. Packaged builds
+# now also install an available engine update on startup (opt-out, once a
+# day) instead of only warning, since extractor rot is the operational
+# risk this app exists to survive. Downloads are final on disk:
+# VIDEO_FORMAT_SORT_FIELDS now ranks the codec first (H.264, AAC) so a
+# finished file plays everywhere, and the old After Effects re-encode step
+# is gone entirely - there is nothing left to fix up after the download.
 
-__version__ = "2.7.0"
+__version__ = "2.8.0"

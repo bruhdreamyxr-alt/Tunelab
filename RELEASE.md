@@ -43,10 +43,12 @@ fix. If you see that error, either bump `version.py` or re-tag.
 
 | File | Who it is for |
 |---|---|
-| `mysetup270.exe` | Windows installer — a fresh install |
-| `UniversalAudioStudio_2.7.0_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
+| `mysetup<versiondigits>.exe` | Windows installer — a fresh install. The digits come from `version.py`: `2.8.0` → `mysetup280.exe`. |
+| `UniversalAudioStudio_<version>_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
 
-The macOS build was removed, so a Release now carries Windows files only.
+The names are derived from `version.py`, never written by hand — for 2.8.0
+that is `mysetup280.exe` and `UniversalAudioStudio_2.8.0_update.zip`. The macOS
+build was removed, so a Release now carries Windows files only.
 
 ## How updates reach people
 

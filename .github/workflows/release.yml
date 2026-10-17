@@ -165,34 +165,28 @@ jobs:
             Installed copies check this Release automatically and update
             themselves.
 
-            ## What's new in 2.7.0
+            ## What's new in 2.8.0
 
-            ### Update Center — the one place to update
-            A new Updates page (rail icon, Ctrl+8) shows your installed
-            version, when you last checked, a Check now button, the newest
-            release's notes, and a link to all releases. The Speed tab's
-            duplicate "Check for App Updates" button is gone: the Update
-            Center is the only place the app updates from.
+            ### The downloader engine updates itself
+            yt-dlp - the engine that actually fetches video - is the one
+            thing that breaks when sites change, so it now keeps itself
+            current. Packaged installs check once a day and install an
+            available engine update on startup, and the Update Center has
+            a new "Downloader engine (yt-dlp)" card with the live version
+            number and a one-click update. A checkbox lets you turn the
+            automatic part off; the app never silently rewrites anything
+            outside its own data folder.
 
-            ### Undo skip
-            "Skip this version" on the startup banner can be taken back.
-            The Update Center shows which version is being skipped and
-            offers it again with one click.
+            ### Finished files play everywhere
+            Downloads now pick the codec first (H.264 video, AAC audio)
+            instead of chasing the highest resolution. The file that lands
+            in your folder plays in any player, on any device, and no
+            longer needs a separate conversion step afterwards.
 
-            ### Download history on a real database
-            History now lives in SQLite alongside the old JSON file:
-            thousands of entries instead of 200, with the same search,
-            sort and paging. Existing history imports itself the first
-            time the page opens, and Clear and Prune cover both stores.
-
-            ### A mark of its own
-            The Updates row and page carry a drawn sparkle instead of the
-            generic refresh arc.
-
-            ### Under the hood
-            The queue, history and update code moved out of the
-            5,900-line ui.py into a pages/ package (ui.py is under 4,500
-            lines now); every guard reads the whole UI, so behaviour is
-            unchanged.
+            ### The After Effects re-encode is gone
+            Because files are H.264/AAC straight from the download, the
+            old "re-encode for compatibility" pass is removed. What you
+            download is the final file - nothing is rewritten after the
+            fact, so there is nothing left to go wrong.
 
 # Google Drive is being retired rather than mirrored to - see RELEASE.md.
