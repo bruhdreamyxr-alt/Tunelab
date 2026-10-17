@@ -227,5 +227,61 @@ class HistoryPageWiringTests(unittest.TestCase):
                       src)
 
 
+class HistoryGalleryTests(unittest.TestCase):
+    """The History page's video-only gallery view.
+
+    The gallery fails silently in three specific ways: an undeclared
+    history_view pref that snaps back to List every launch (the _load_prefs
+    filter), a branch that renders tiles *and* list rows on top of each
+    other, and thumbnail work that blocks the UI thread or reaches for the
+    network. All three are pinned here.
+    """
+
+    @staticmethod
+    def _page():
+        return (PROJECT_DIR / "pages" / "history.py").read_text(
+            encoding="utf-8")
+
+    @classmethod
+    def _method(cls, name):
+        src = cls._page()
+        start = src.index("    def %s(" % name)
+        end = src.find("\n    def ", start + 1)
+        return src[start:end if end != -1 else None]
+
+    def test_the_view_choice_is_declared_so_it_survives_a_restart(self):
+        ui_src = (PROJECT_DIR / "ui.py").read_text(encoding="utf-8")
+        self.assertIn('"history_view": "list",', ui_src)
+
+    def test_the_toggle_persists_and_repaints(self):
+        build = self._method("build_history_view")
+        self.assertIn('values=["List", "Gallery"]', build)
+        body = self._method("_on_history_view_toggled")
+        self.assertIn('self._set_pref("history_view", choice)', body)
+        self.assertIn("self._refresh_history_view(force=True)", body)
+
+    def test_the_gallery_branch_returns_before_the_list_rows(self):
+        body = self._method("_refresh_history_view")
+        call = body.index("self._render_history_gallery(shown)")
+        rows = body.index("for idx, entry in enumerate(shown)")
+        self.assertLess(call, rows)
+        # Without the return the list rows draw on top of the tiles.
+        self.assertIn("return", body[call:rows])
+
+    def test_posters_are_local_lazy_and_marshalled_to_the_ui_thread(self):
+        grid = self._method("_render_history_gallery")
+        self.assertIn("self._start_worker", grid)
+        loader = self._method("_load_gallery_thumbs")
+        self.assertIn("downloader.extract_video_thumbnail(path)", loader)
+        # Only the main thread may touch Tk: the image lands via self.after
+        # behind a winfo_exists guard, so a tile destroyed mid-load (page
+        # switch, refresh) is simply skipped.
+        self.assertIn("self.after(0, lambda l=img_lbl", loader)
+        self.assertIn("l.winfo_exists()", loader)
+        # Video-only by standing decision: nothing here fetches remotely.
+        self.assertNotIn("urllib", loader)
+        self.assertNotIn("urlopen", loader)
+
+
 if __name__ == "__main__":
     unittest.main()

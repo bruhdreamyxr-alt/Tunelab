@@ -3219,5 +3219,68 @@ class UpdateBannerTests(unittest.TestCase):
         self.assertEqual(_shorten_release_notes("short note"), "short note")
 
 
+@requires_ctk
+class HistoryGalleryWidgetTests(unittest.TestCase):
+    """The gallery renders on a real window; List stays the default.
+
+    Source guards cannot see a tile that fails to construct or rows drawn
+    on top of the grid, so this drives the actual widgets: one shared
+    window for the class (the suite-wide speed pattern), entries injected
+    so the test does not depend on the machine's real history.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.addClassCleanup(cls._startup_patch.stop)
+        cls.addClassCleanup(_destroy_class_app, cls)
+        cls.app = _new_app()
+
+    def test_gallery_renders_a_tile_per_entry(self):
+        app = type(self).app
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        clip = os.path.join(tmp.name, "clip.mp4")
+        with open(clip, "wb") as fh:
+            fh.write(b"\x00" * 64)
+        entries = [
+            {"url": "https://example.invalid/v", "title": "Clip",
+             "filepath": clip, "status": "done", "is_video": True,
+             "completed_at": 1.0},
+            {"url": "https://example.invalid/a", "title": "Song",
+             "filepath": os.path.join(tmp.name, "gone.mp3"),
+             "status": "done", "is_video": False, "completed_at": 2.0},
+        ]
+        orig_pref = app._history_view_pref()
+        self.addCleanup(app._set_pref, "history_view", orig_pref)
+        app._history_entries = lambda: entries
+        self.addCleanup(lambda: app.__dict__.pop("_history_entries", None))
+        app._set_pref("history_view", "gallery")
+        app.show_frame("history")
+        app._refresh_history_view(force=True)
+        app.update()
+
+        widgets = list(app._iter_widgets(app._history_entries_frame))
+        btn_texts = [w.cget("text") for w in widgets
+                     if isinstance(w, ctk.CTkButton)]
+        # Two entries -> two tiles, each offering the list row's actions.
+        self.assertEqual(btn_texts.count("Re-download"), 2)
+        self.assertEqual(btn_texts.count("Open"), 2)
+        label_texts = [w.cget("text") for w in widgets
+                       if isinstance(w, ctk.CTkLabel)]
+        # The audio entry keeps a neutral tile: video-only by decision.
+        self.assertIn("Audio", label_texts)
+
+    def test_the_toggle_offers_both_views_and_list_is_the_default(self):
+        app = type(self).app
+        self.assertEqual(app._history_view_pref(), "list")
+        app.show_frame("history")
+        toggle = getattr(app, "history_view_toggle", None)
+        self.assertIsNotNone(toggle, "view toggle missing from history page")
+        assert toggle is not None  # narrows for the type checker
+        self.assertEqual(list(toggle.cget("values")), ["List", "Gallery"])
+
+
 if __name__ == "__main__":
     unittest.main()

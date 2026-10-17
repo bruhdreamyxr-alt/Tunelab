@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import hashlib
 import logging
 import re
 import time
@@ -1738,6 +1739,56 @@ def _get_source_thumbnail_url(source_ref: Optional[str]) -> Optional[str]:
                 info = first
             return info.get('thumbnail')
     except Exception:
+        return None
+
+
+_THUMB_CACHE_SUBDIR = ".video_thumb_cache"
+_THUMB_WIDTH = 320
+_THUMB_HEIGHT = 180
+
+
+def _thumbnail_cache_dir() -> str:
+    """Per-user cache dir for gallery poster frames (never the install dir)."""
+    return os.path.join(_get_user_data_dir(), _THUMB_CACHE_SUBDIR)
+
+
+def extract_video_thumbnail(video_path: str) -> Optional[str]:
+    """Extract a poster frame from a local video via ffmpeg; return its path.
+
+    Used by the History page's gallery view. Reads one frame near the start
+    and writes a small JPEG into the per-user cache, keyed by a hash of the
+    source path so repeated renders are free. Returns None for anything that
+    cannot produce a frame (audio file, missing file, no ffmpeg) — the
+    caller renders a placeholder tile instead. Never raises.
+    """
+    if not video_path or not os.path.isfile(video_path):
+        return None
+    ffmpeg = _get_ffmpeg_bin()
+    if not ffmpeg:
+        return None
+    try:
+        cache_dir = _thumbnail_cache_dir()
+        os.makedirs(cache_dir, exist_ok=True)
+        key = hashlib.sha1(os.path.abspath(video_path).encode("utf-8",
+                                                              "replace")).hexdigest()
+        dest = os.path.join(cache_dir, key + ".jpg")
+        if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+            return dest
+        completed = subprocess.run(
+            [ffmpeg, "-v", "error", "-ss", "1", "-i", video_path,
+             "-frames:v", "1", "-vf",
+             f"scale={_THUMB_WIDTH}:{_THUMB_HEIGHT}:force_original_aspect_ratio=increase,"
+             f"crop={_THUMB_WIDTH}:{_THUMB_HEIGHT}",
+             "-y", dest],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **_no_window_kwargs(), timeout=30,
+        )
+        if completed.returncode != 0 or not os.path.isfile(dest) \
+                or os.path.getsize(dest) == 0:
+            return None
+        return dest
+    except Exception as e:
+        logger.debug("Thumbnail extract failed for %s: %s", video_path, e)
         return None
 
 

@@ -217,6 +217,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             # engine card's checkbox writes it, the startup probe reads
             # it (packaged builds only). Declared for the same reason.
             "engine_auto_update": True,
+            # History page view mode: 'list' (default) or 'gallery'.
+            # Written by the List/Gallery toggle; declared so the choice
+            # survives a restart.
+            "history_view": "list",
         }
 
     def _load_prefs(self) -> dict:

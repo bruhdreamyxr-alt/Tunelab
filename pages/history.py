@@ -28,6 +28,7 @@ class HistoryPageMixin:
     _show_error_dialog: Any
     _start_worker: Any
     _style_button: Any
+    _set_pref: Any
     after: Any
     after_cancel: Any
     download_mp3: Any
@@ -69,6 +70,19 @@ class HistoryPageMixin:
         )
         self.btn_prune_history.pack(side="right")
         self._style_button(self.btn_prune_history, "ghost", icon="trash")
+
+        # List / Gallery view toggle. Persists so the choice survives a
+        # restart; the gallery is video-only (thumbnails come from a local
+        # ffmpeg frame grab), so audio entries keep a neutral tile there.
+        self.history_view_var = ctk.StringVar(
+            value="Gallery" if self._history_view_pref() == "gallery" else "List")
+        self.history_view_toggle = ctk.CTkSegmentedButton(
+            ctrl_row, values=["List", "Gallery"],
+            variable=self.history_view_var,
+            command=self._on_history_view_toggled,
+        )
+        self.history_view_toggle.pack(side="right", padx=(0, 12))
+        self.history_view_toggle.set(self.history_view_var.get())
 
         # Search bar
         search_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
@@ -174,6 +188,18 @@ class HistoryPageMixin:
             self._history_sort_reverse = True if key == "date" else False
         self._history_show_all = False
         self._refresh_history_view()
+
+    def _history_view_pref(self) -> str:
+        """The persisted view mode: 'gallery' or 'list' (default)."""
+        return "gallery" if str(
+            (getattr(self, "_prefs", None) or {}).get("history_view", "")
+        ).lower() == "gallery" else "list"
+
+    def _on_history_view_toggled(self, _value=None):
+        """Persist the List/Gallery choice and repaint immediately."""
+        choice = "gallery" if str(self.history_view_var.get()).lower() == "gallery" else "list"
+        self._set_pref("history_view", choice)
+        self._refresh_history_view(force=True)
 
     def _history_entries(self):
         """The saved history: SQLite when it answers, else the JSON file.
@@ -300,6 +326,12 @@ class HistoryPageMixin:
         else:
             limit = _HISTORY_PAGE
         shown = history[:limit]
+        if shown and self._history_view_pref() == "gallery":
+            # Video-only poster grid. Returns so the list rows below do not
+            # render on top of the tiles; the empty-state message above is
+            # untouched, so an empty history still reads the same either way.
+            self._render_history_gallery(shown)
+            return
         for idx, entry in enumerate(shown):
             self._add_history_entry(idx, entry)
         if len(history) > len(shown):
@@ -389,6 +421,136 @@ class HistoryPageMixin:
             btn_open.pack(side="left", padx=2)
             btn_open.bind("<Enter>", lambda e, b=btn_open: self._schedule_sb_tooltip(b, "Open file", only_when_collapsed=False))
             btn_open.bind("<Leave>", lambda e: self._hide_sb_tooltip())
+
+    # --- Gallery view -------------------------------------------------------
+    # A wrapping grid of poster tiles. Thumbnails are extracted locally with
+    # the bundled ffmpeg (downloader.extract_video_thumbnail) and loaded in a
+    # background worker so a grid of posters never blocks the UI thread; each
+    # image is applied through self.after() because only the main thread may
+    # touch Tk. Audio (or an entry whose file is gone) gets a neutral
+    # placeholder tile - the gallery is video-only by the standing decision,
+    # so nothing here ever reaches for the network.
+
+    _GALLERY_TILE_W = 200
+    _GALLERY_THUMB_H = 112   # 16:9-ish poster area
+    _GALLERY_PAD = 12
+
+    def _render_history_gallery(self, shown):
+        """Draw the poster grid for *shown* and kick off thumbnail loading."""
+        grid = ctk.CTkFrame(self._history_entries_frame, fg_color="transparent")
+        grid.pack(fill="both", expand=True, padx=4, pady=4)
+        cols = self._gallery_column_count()
+
+        row = None
+        pending = []  # (video_path, image_label) pairs needing a poster
+        for i, entry in enumerate(shown):
+            if i % cols == 0:
+                row = ctk.CTkFrame(grid, fg_color="transparent")
+                row.pack(fill="x", pady=(0, self._GALLERY_PAD))
+            tile, img_lbl = self._build_gallery_tile(row, entry)
+            tile.pack(side="left", padx=(0, self._GALLERY_PAD))
+            if img_lbl is not None:
+                pending.append((str(entry.get("filepath") or ""), img_lbl))
+        if pending:
+            self._start_worker(lambda: self._load_gallery_thumbs(pending))
+
+    def _gallery_column_count(self) -> int:
+        """How many tiles fit across, from the scroll viewport width."""
+        try:
+            inner = int(self.history_scroll._parent_canvas.winfo_width()) - 40
+        except Exception:
+            inner = 800
+        tile_w = self._GALLERY_TILE_W + self._GALLERY_PAD
+        return max(1, inner // tile_w)
+
+    def _build_gallery_tile(self, parent, entry):
+        """One poster tile; returns (tile, image_label_or_None).
+
+        The image label only exists for video entries whose file is still on
+        disk - those are the ones the worker can produce a poster for.
+        """
+        w = self._GALLERY_TILE_W
+        title = entry.get("title") or entry.get("url", "")[:48] or "Unknown"
+        filepath = str(entry.get("filepath") or "")
+        is_video = bool(entry.get("is_video"))
+        tile = ctk.CTkFrame(parent, width=w, corner_radius=UITheme.RADIUS_MD)
+
+        # Poster area: a fixed-size well so tiles stay aligned while posters
+        # load, and so a slow ffmpeg grab never reflows the grid.
+        poster = ctk.CTkFrame(tile, height=self._GALLERY_THUMB_H,
+                              corner_radius=UITheme.RADIUS_SM,
+                              fg_color=("#2b2b2b", "#1f1f1f"))
+        poster.pack(fill="x", padx=6, pady=(6, 0))
+        poster.pack_propagate(False)
+        img_lbl = None
+        if is_video and filepath and os.path.exists(filepath):
+            img_lbl = ctk.CTkLabel(poster, text="...", font=UITheme.F(9),
+                                   text_color="#95a5a6")
+            img_lbl.pack(expand=True)
+        else:
+            # Neutral placeholder keeps the grid complete for audio entries
+            # and for videos whose file has since been moved or deleted.
+            kind = "Video" if is_video else "Audio"
+            ctk.CTkLabel(poster, text=kind, font=UITheme.F(10),
+                         text_color="#7f8c8d").pack(expand=True)
+
+        ctk.CTkLabel(tile, text=title, font=UITheme.F(10), anchor="w",
+                     wraplength=w - 16, justify="left",
+                     height=UITheme.H_CTRL).pack(fill="x", padx=8, pady=(4, 2))
+
+        # The same two actions a list row offers: open the file, re-download.
+        actions = ctk.CTkFrame(tile, fg_color="transparent")
+        actions.pack(fill="x", padx=6, pady=(0, 6))
+        btn_open = ctk.CTkButton(actions, text="Open", width=70,
+                                 height=UITheme.H_SM, font=UITheme.F(9),
+                                 command=lambda p=filepath: self._open_file(p))
+        btn_open.pack(side="left", expand=True, fill="x", padx=(0, 3))
+        btn_dl = ctk.CTkButton(
+            actions, text="Re-download", width=84, height=UITheme.H_SM,
+            font=UITheme.F(9),
+            command=lambda u=entry.get("url", ""), v=is_video:
+                self._redownload(u, v))
+        btn_dl.pack(side="left", expand=True, fill="x")
+        if is_video and filepath and os.path.exists(filepath):
+            tile.bind("<Button-1>", lambda e, p=filepath: self._open_file(p))
+        return tile, img_lbl
+
+    def _load_gallery_thumbs(self, pending):
+        """Worker: grab a poster per tile, then apply images on the UI thread.
+
+        Runs off-thread (thumbnail extraction is an ffmpeg subprocess). Each
+        image is handed back through self.after() and re-checked for a live
+        widget at application time - a refresh or a page switch may have
+        destroyed the tile between scheduling and application. The opened
+        Pillow image is pinned on the label (``_gallery_photo``) so Tk never
+        holds a reference to a freed bitmap.
+        """
+        Image = downloader._mod_image()
+        ctk_image = getattr(ctk, "CTkImage", None)
+        if Image is None or ctk_image is None:
+            # No Pillow: tiles keep their placeholder text, still usable.
+            logger.debug("Gallery posters unavailable (Pillow missing)")
+            return
+        size = (self._GALLERY_TILE_W - 12, self._GALLERY_THUMB_H)
+        for path, img_lbl in pending:
+            try:
+                if not path or not os.path.exists(path):
+                    continue
+                thumb_path = downloader.extract_video_thumbnail(path)
+                if not thumb_path or not os.path.exists(thumb_path):
+                    continue
+                img = Image.open(thumb_path)
+                img.load()
+                disp = img.convert("RGB").resize(size)
+                tk_img = ctk_image(light_image=disp, dark_image=disp,
+                                   size=size)
+                img_lbl._gallery_photo = tk_img
+                self.after(0, lambda l=img_lbl, t=tk_img:
+                           l.configure(image=t, text="")
+                           if l.winfo_exists() else None)
+            except Exception:
+                logger.debug("Gallery thumb failed for %s", path,
+                             exc_info=True)
 
     def _redownload(self, url, is_video):
         """Re-download a URL from history by injecting it into the downloader."""
