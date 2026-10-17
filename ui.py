@@ -213,6 +213,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             # Center's "Last checked" line. Declared like
             # skipped_version: _load_prefs drops undeclared keys.
             "last_update_check": "",
+            # Startup engine (yt-dlp) auto-install - the Update Center
+            # engine card's checkbox writes it, the startup probe reads
+            # it (packaged builds only). Declared for the same reason.
+            "engine_auto_update": True,
         }
 
     def _load_prefs(self) -> dict:

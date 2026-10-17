@@ -224,5 +224,65 @@ class EngineProbeGuardTests(unittest.TestCase):
                       _method_source("_ytdlp_update_check_worker"))
 
 
+class EngineAutoUpdateTests(unittest.TestCase):
+    """The startup probe can install engine updates - packaged builds only.
+
+    yt-dlp breaks on major sites constantly and this app's entire job is
+    downloading, so packaged builds install an available engine update
+    unattended instead of only nudging. The three things that must never
+    regress: the pref survives a restart (declared in _default_prefs), a
+    dev environment is never pip-mutated silently (the sys.frozen gate
+    comes first), and a successful install re-probes fresh instead of
+    painting the stale closure's "update available" label.
+    """
+
+    def test_the_pref_is_declared_so_it_survives_a_restart(self):
+        # _load_prefs keeps only declared keys - an undeclared toggle would
+        # snap back to its default after every launch.
+        self.assertIn('"engine_auto_update": True', _source())
+
+    def test_the_engine_card_offers_the_toggle_and_it_persists(self):
+        body = _method_source("build_updates_view")
+        self.assertIn("Update the engine automatically at startup", body)
+        self.assertIn("command=self._apply_engine_auto_pref", body)
+        self.assertIn("self.engine_auto_var = tk.BooleanVar(", body)
+        persist = _method_source("_apply_engine_auto_pref")
+        self.assertIn('self._set_pref("engine_auto_update"', persist)
+        self.assertIn("bool(self.engine_auto_var.get())", persist)
+
+    def test_auto_update_never_touches_a_dev_environment(self):
+        # The frozen gate comes before the pref read, so no pref value can
+        # ever turn an unattended pip install on in a source run.
+        body = _method_source("_ytdlp_auto_update_allowed")
+        self.assertIn('if not getattr(sys, "frozen", False):', body)
+        self.assertIn('"engine_auto_update", True', body)
+        gate = body.index('if not getattr(sys, "frozen", False):')
+        pref = body.index('"engine_auto_update", True')
+        self.assertLess(gate, pref)
+
+    def test_a_successful_install_reenters_fresh_and_skips_the_nudge(self):
+        body = _method_source("_ytdlp_update_check_worker")
+        self.assertIn("self._ytdlp_auto_update_allowed()", body)
+        self.assertIn("self._ytdlp_attempt_auto_update(local)", body)
+        self.assertIn("_ytdlp_update_check_worker(force=True)", body)
+        # Ordering is the contract: after a successful install the worker
+        # re-enters (force=True - the daily marker is already stamped) and
+        # returns BEFORE the stale-closure nudge is scheduled.
+        attempt = body.index("self._ytdlp_attempt_auto_update(local)")
+        nudge = body.index("def push_banner")
+        first_return = body.index("return", attempt)
+        self.assertLess(attempt, nudge)
+        self.assertLess(first_return, nudge)
+
+    def test_the_attempt_swallows_errors_and_reports_the_new_version(self):
+        body = _method_source("_ytdlp_attempt_auto_update")
+        self.assertIn("downloader.update_ytdlp()", body)
+        self.assertIn("return downloader.get_ytdlp_version()", body)
+        # A failure must degrade to None so the caller keeps the manual
+        # nudge, never propagate into the probe thread.
+        self.assertIn("except Exception", body)
+        self.assertIn("return None", body)
+
+
 if __name__ == "__main__":
     unittest.main()

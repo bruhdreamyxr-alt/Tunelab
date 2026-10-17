@@ -9,12 +9,13 @@ updates or it means nothing.
 """
 
 import logging
+import sys
 import time
 import webbrowser
 
 import tkinter as tk
 from tkinter import messagebox
-from typing import Any
+from typing import Any, Optional
 
 import customtkinter as ctk
 from ui_theme import UITheme, _mix, _paint_icon
@@ -367,7 +368,21 @@ class UpdatesPageMixin:
             engine,
             text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
             font=UITheme.F(10), text_color="#95a5a6", anchor="w")
-        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 8))
+        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 4))
+
+        # Unattended startup installs: opt-out for packaged builds only
+        # (frozen engine = a user-space copy of yt-dlp.exe that -U rewrites;
+        # the dev environment is never pip-mutated silently, so the toggle
+        # is inert there - see _ytdlp_auto_update_allowed).
+        self.engine_auto_var = tk.BooleanVar(
+            value=bool((getattr(self, "_prefs", None) or {}).get(
+                "engine_auto_update", True)))
+        ctk.CTkCheckBox(
+            engine,
+            text="Update the engine automatically at startup",
+            variable=self.engine_auto_var,
+            command=self._apply_engine_auto_pref,
+        ).pack(anchor="w", padx=16, pady=(0, 12))
 
         # Card 3: a version the user skipped, with the way back. The skip
         # button on the banner was otherwise permanent-until-a-newer-release
@@ -601,14 +616,58 @@ class UpdatesPageMixin:
             logger.debug("Could not reconfigure the yt-dlp update button",
                          exc_info=True)
 
+    def _ytdlp_auto_update_allowed(self) -> bool:
+        """Whether the startup probe may install an engine update itself.
+
+        Packaged builds only: the frozen engine refreshes a user-space copy
+        of yt-dlp.exe (downloader.update_ytdlp), never the install dir, so
+        an unattended install cannot break the installation. In a dev
+        environment the same flow is ``pip install --upgrade`` and silently
+        mutating someone's virtualenv on launch is a foot-gun - the button
+        stays the opt-in there, whatever the pref says.
+        """
+        if not getattr(sys, "frozen", False):
+            return False
+        return bool((getattr(self, "_prefs", None) or {}).get(
+            "engine_auto_update", True))
+
+    def _apply_engine_auto_pref(self) -> None:
+        """Persist the engine auto-update toggle (engine card checkbox)."""
+        try:
+            self._set_pref("engine_auto_update",
+                           bool(self.engine_auto_var.get()))
+        except Exception:
+            logger.debug("Could not persist engine_auto_update",
+                         exc_info=True)
+
+    def _ytdlp_attempt_auto_update(self, before: str) -> Optional[str]:
+        """Run downloader.update_ytdlp() unattended; return the new version.
+
+        Never raises - a failed auto-update degrades to ``None`` so the
+        caller keeps the manual nudge. Runs on the probe's worker thread
+        (the startup probe goes through _start_worker), so the exe's
+        self-update subprocess cannot block the UI.
+        """
+        try:
+            result = downloader.update_ytdlp()
+            logger.info("Engine auto-update finished: %s",
+                        str(result).splitlines()[0] if result else "?")
+        except Exception:
+            logger.warning("Engine auto-update failed", exc_info=True)
+            return None
+        return downloader.get_ytdlp_version()
+
     def _ytdlp_update_check_worker(self, force: bool = False):
         """Background startup probe: warn only if a yt-dlp update is available.
 
+        Packaged builds with the engine_auto_update pref on (the default)
+        go further and install the update unattended instead of nudging.
+
         Rate-limited to once per day so we don't hit GitHub on every
-        launch; force=True bypasses the throttle - the update click uses
-        it to repaint the version line, where the throttle would
-        otherwise leave the label frozen at "Updating yt-dlp..." until
-        the marker rolls over.
+        launch; force=True bypasses the throttle - the update click and
+        the post-install re-probe use it to repaint the version line,
+        where the throttle would otherwise leave the label frozen at
+        "Updating yt-dlp..." until the marker rolls over.
         """
         if not force and download_queue._update_check_done_today('ytdlp'):
             logger.debug("yt-dlp update check already ran today; skipping")
@@ -623,6 +682,24 @@ class UpdatesPageMixin:
         status = res.get("status")
         local = res.get("local")
         latest = res.get("latest")
+
+        # Packaged builds with the opt-out pref on: install the update right
+        # here instead of nudging (yt-dlp breaks on major sites constantly,
+        # and the frozen engine only ever rewrites the user-space copy in
+        # the per-user data dir). On success re-enter with force=True - the
+        # daily marker is already stamped, the label must repaint to the
+        # NEW version (not this stale closure), and there is no nudge left
+        # to push. On failure fall through: the manual path (the engine
+        # card's button) still gets advertised below.
+        if status == "update" and local and latest \
+                and self._ytdlp_auto_update_allowed():
+            after = self._ytdlp_attempt_auto_update(local)
+            if after and after != local:
+                logger.info("Engine auto-updated: %s -> %s", local, after)
+                self.after(0, lambda: self._ytdlp_update_check_worker(force=True))
+                return
+            logger.warning("Engine auto-update did not apply; keeping the "
+                           "manual nudge")
 
         def refresh_label():
             # Rebuild the friendly version label text based on probe result,
