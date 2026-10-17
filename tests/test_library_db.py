@@ -273,12 +273,13 @@ class HistoryGalleryTests(unittest.TestCase):
         self.assertIn("self._start_worker", grid)
         loader = self._method("_load_gallery_thumbs")
         self.assertIn("downloader.extract_video_thumbnail(path)", loader)
+        self.assertIn("downloader.extract_audio_artwork(path)", loader)
         # Only the main thread may touch Tk: the image lands via self.after
         # behind a winfo_exists guard, so a tile destroyed mid-load (page
         # switch, refresh) is simply skipped.
         self.assertIn("self.after(0, lambda l=img_lbl", loader)
         self.assertIn("l.winfo_exists()", loader)
-        # Video-only by standing decision: nothing here fetches remotely.
+        # Local files only: nothing here fetches remotely.
         self.assertNotIn("urllib", loader)
         self.assertNotIn("urlopen", loader)
 

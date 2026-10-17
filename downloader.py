@@ -1792,6 +1792,106 @@ def extract_video_thumbnail(video_path: str) -> Optional[str]:
         return None
 
 
+def _embedded_art_bytes(audio_path: str) -> Optional[bytes]:
+    """Raw embedded cover bytes from an audio file, or None. Never raises."""
+    if _mod_mutagen() is None:
+        return None
+    try:
+        from mutagen.mp3 import MP3
+        from mutagen.id3 import APIC
+
+        try:
+            audio = MP3(audio_path)
+            tags = audio.tags
+            if tags is not None:
+                for frame in tags.values():
+                    data = getattr(frame, "data", None)
+                    if isinstance(frame, APIC) and data:
+                        return bytes(data)
+        except Exception:
+            pass
+        try:
+            import mutagen
+
+            generic = mutagen.File(audio_path)
+            if generic is not None:
+                pics = getattr(generic, "pictures", None)
+                if pics and getattr(pics[0], "data", None):
+                    return bytes(pics[0].data)
+                tags = getattr(generic, "tags", None)
+                if isinstance(tags, dict):
+                    covr = tags.get("covr")
+                    if covr and getattr(covr[0], "__bytes__", None):
+                        try:
+                            return bytes(covr[0])
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def extract_audio_artwork(audio_path: str, size: int = 320) -> Optional[str]:
+    """Extract an audio file's cover art into the thumb cache; return its path.
+
+    Used by the History page's gallery view. Prefers embedded art (MP3 APIC,
+    FLAC pictures, M4A covr via mutagen), falling back to a sidecar image next
+    to the file (the downloader's own thumbnail lookup). The result is a
+    square JPEG in the per-user cache, keyed by a hash of the source path so
+    repeated renders are free. Returns None for anything without usable art
+    (missing file, no mutagen/Pillow, no embedded or sidecar image) — the
+    caller renders a placeholder tile instead. Never raises.
+    """
+    if not audio_path or not os.path.isfile(audio_path):
+        return None
+    try:
+        cache_dir = _thumbnail_cache_dir()
+        os.makedirs(cache_dir, exist_ok=True)
+        key = hashlib.sha1(os.path.abspath(audio_path).encode("utf-8",
+                                                              "replace")).hexdigest()
+        dest = os.path.join(cache_dir, key + "-audio.jpg")
+        if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+            return dest
+        raw = _embedded_art_bytes(audio_path)
+        if raw is None:
+            sidecar = _find_thumbnail_for_mp3(audio_path)
+            if sidecar and os.path.isfile(sidecar):
+                try:
+                    with open(sidecar, "rb") as fh:
+                        raw = fh.read()
+                except Exception:
+                    raw = None
+        if not raw:
+            return None
+        pil = _mod_image()
+        if pil is None:
+            return None
+        try:
+            im = pil.open(io.BytesIO(raw)).convert("RGB")
+        except Exception:
+            return None
+        # Center-crop cover: scale so the short side fills, then cut the
+        # square from the middle. Covers stay undistorted in the tile well.
+        w, h = im.size
+        if w <= 0 or h <= 0:
+            return None
+        scale = max(size / w, size / h)
+        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))),
+                       pil.LANCZOS)
+        w, h = im.size
+        left, top = (w - size) // 2, (h - size) // 2
+        im.crop((left, top, left + size, top + size)).save(
+            dest, format="JPEG", quality=85)
+        if not os.path.isfile(dest) or os.path.getsize(dest) == 0:
+            return None
+        return dest
+    except Exception as e:
+        logger.debug("Artwork extract failed for %s: %s", audio_path, e)
+        return None
+
+
 def _embed_thumbnail_if_missing(
     mp3_path: str,
     status_callback: Callable[[str, str], Any],

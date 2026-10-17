@@ -272,6 +272,7 @@ class HistoryPageMixin:
             self._history_sort_key,
             self._history_sort_reverse,
             bool(getattr(self, "_history_show_all", False)),
+            self._history_view_pref(),
             tuple(
                 (e.get("url"), e.get("title"), e.get("status"),
                  e.get("filepath"), e.get("completed_at"))
@@ -327,7 +328,7 @@ class HistoryPageMixin:
             limit = _HISTORY_PAGE
         shown = history[:limit]
         if shown and self._history_view_pref() == "gallery":
-            # Video-only poster grid. Returns so the list rows below do not
+            # Poster grid. Returns so the list rows below do not
             # render on top of the tiles; the empty-state message above is
             # untouched, so an empty history still reads the same either way.
             self._render_history_gallery(shown)
@@ -480,6 +481,16 @@ class HistoryPageMixin:
         if not path or not os.path.isfile(path):
             return None
         return path
+    @classmethod
+    def _entry_audio_path(cls, entry):
+        """The existing local audio file to pull cover art from, or None."""
+        if cls._entry_video_kind(entry) != "audio":
+            return None
+        path = cls._entry_resolved_path(entry)
+        if not path or not os.path.isfile(path):
+            return None
+        return path
+
 
     def _render_history_gallery(self, shown):
         """Draw the poster grid for *shown* and kick off thumbnail loading."""
@@ -488,16 +499,20 @@ class HistoryPageMixin:
         cols = self._gallery_column_count()
 
         row = None
-        pending = []  # (video_path, image_label) pairs needing a poster
+        pending = []  # (kind, media_path, image_label) needing a poster
         for i, entry in enumerate(shown):
             if i % cols == 0:
                 row = ctk.CTkFrame(grid, fg_color="transparent")
                 row.pack(fill="x", pady=(0, self._GALLERY_PAD))
             vid = self._entry_video_path(entry)
+            aud = self._entry_audio_path(entry)
             tile, img_lbl = self._build_gallery_tile(row, entry)
             tile.pack(side="left", padx=(0, self._GALLERY_PAD))
-            if vid and img_lbl is not None:
-                pending.append((vid, img_lbl))
+            if img_lbl is not None:
+                if vid:
+                    pending.append(("video", vid, img_lbl))
+                elif aud:
+                    pending.append(("audio", aud, img_lbl))
         if pending:
             self._start_worker(lambda: self._load_gallery_thumbs(pending))
 
@@ -513,8 +528,8 @@ class HistoryPageMixin:
     def _build_gallery_tile(self, parent, entry):
         """One poster tile; returns (tile, image_label_or_None).
 
-        The image label only exists for video entries whose file is still on
-        disk - those are the ones the worker can produce a poster for.
+        The image label exists for any entry whose file is still on disk:
+        videos get an ffmpeg frame, audio gets embedded/sidecar cover art.
         """
         w = self._GALLERY_TILE_W
         title = entry.get("title") or entry.get("url", "")[:48] or "Unknown"
@@ -534,15 +549,17 @@ class HistoryPageMixin:
         poster.pack(fill="x", padx=6, pady=(6, 0))
         poster.pack_propagate(False)
         img_lbl = None
-        if vid:
+        kind = self._entry_video_kind(entry)
+        audio_path = self._entry_audio_path(entry)
+        if vid or audio_path:
             img_lbl = ctk.CTkLabel(poster, text="...", font=UITheme.F(9),
                                    text_color="#95a5a6")
             img_lbl.pack(expand=True)
         else:
-            # Neutral placeholder keeps the grid complete for audio entries
-            # and for videos whose file has since been moved or deleted.
-            kind = "Video" if is_video else "Audio"
-            ctk.CTkLabel(poster, text=kind, font=UITheme.F(10),
+            # Neutral placeholder keeps the grid complete for entries whose
+            # file has since been moved or deleted.
+            label = "Video" if is_video else ("Audio" if kind == "audio" else "?")
+            ctk.CTkLabel(poster, text=label, font=UITheme.F(10),
                          text_color="#7f8c8d").pack(expand=True)
 
         ctk.CTkLabel(tile, text=title, font=UITheme.F(10), anchor="w",
@@ -583,12 +600,21 @@ class HistoryPageMixin:
             logger.debug("Gallery posters unavailable (Pillow missing)")
             return
         size = (self._GALLERY_TILE_W - 12, self._GALLERY_THUMB_H)
-        for path, img_lbl in pending:
+        for item in pending:
+            if len(item) == 3:
+                kind, path, img_lbl = item
+            else:
+                kind, path, img_lbl = "video", item[0], item[1]
             tk_img = None
             try:
-                thumb_path = (
-                    downloader.extract_video_thumbnail(path)
-                    if path and os.path.exists(path) else None)
+                if kind == "audio":
+                    thumb_path = (
+                        downloader.extract_audio_artwork(path)
+                        if path and os.path.exists(path) else None)
+                else:
+                    thumb_path = (
+                        downloader.extract_video_thumbnail(path)
+                        if path and os.path.exists(path) else None)
                 if thumb_path and os.path.exists(thumb_path):
                     img = Image.open(thumb_path)
                     img.load()
