@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from tkinter import messagebox
-from typing import Any
+from typing import Any, Optional
 
 import customtkinter as ctk
 from ui_theme import UITheme
@@ -434,6 +434,52 @@ class HistoryPageMixin:
     _GALLERY_TILE_W = 200
     _GALLERY_THUMB_H = 112   # 16:9-ish poster area
     _GALLERY_PAD = 12
+    # Classification reads the REAL file, because history's is_video flag
+    # lies: existing rows recorded .mp4 downloads as audio (the direct-
+    # download path wrote the wrong flag), and some rows store a folder as
+    # filepath. Deciding on the flag alone is exactly how real videos ended
+    # up with a text placeholder instead of a poster.
+    _GALLERY_VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi",
+                           ".flv", ".wmv", ".mpg", ".mpeg", ".3gp", ".ts")
+    _GALLERY_AUDIO_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg",
+                           ".opus", ".wma", ".aiff", ".aif")
+
+    @classmethod
+    def _entry_resolved_path(cls, entry) -> str:
+        """The entry's file: a folder filepath resolves to the media inside."""
+        path = str(entry.get("filepath") or "")
+        if path and os.path.isdir(path):
+            try:
+                path = downloader.pick_produced_media_file(path) or ""
+            except Exception:
+                path = ""
+        return path
+
+    @classmethod
+    def _entry_video_kind(cls, entry) -> str:
+        """'video' or 'audio' from the actual file, never the flag alone.
+
+        A recognized extension always decides (an .mp4 is a video even when
+        history says otherwise); the flag only breaks ties for containers
+        not listed above.
+        """
+        path = cls._entry_resolved_path(entry)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in cls._GALLERY_AUDIO_EXTS:
+            return "audio"
+        if ext in cls._GALLERY_VIDEO_EXTS:
+            return "video"
+        return "video" if entry.get("is_video") else "audio"
+
+    @classmethod
+    def _entry_video_path(cls, entry) -> Optional[str]:
+        """The existing local video file to grab a frame from, or None."""
+        if cls._entry_video_kind(entry) != "video":
+            return None
+        path = cls._entry_resolved_path(entry)
+        if not path or not os.path.isfile(path):
+            return None
+        return path
 
     def _render_history_gallery(self, shown):
         """Draw the poster grid for *shown* and kick off thumbnail loading."""
@@ -447,10 +493,11 @@ class HistoryPageMixin:
             if i % cols == 0:
                 row = ctk.CTkFrame(grid, fg_color="transparent")
                 row.pack(fill="x", pady=(0, self._GALLERY_PAD))
+            vid = self._entry_video_path(entry)
             tile, img_lbl = self._build_gallery_tile(row, entry)
             tile.pack(side="left", padx=(0, self._GALLERY_PAD))
-            if img_lbl is not None:
-                pending.append((str(entry.get("filepath") or ""), img_lbl))
+            if vid and img_lbl is not None:
+                pending.append((vid, img_lbl))
         if pending:
             self._start_worker(lambda: self._load_gallery_thumbs(pending))
 
@@ -472,7 +519,11 @@ class HistoryPageMixin:
         w = self._GALLERY_TILE_W
         title = entry.get("title") or entry.get("url", "")[:48] or "Unknown"
         filepath = str(entry.get("filepath") or "")
-        is_video = bool(entry.get("is_video"))
+        # Decided from the real file, not entry["is_video"] - see
+        # _entry_video_kind. Feeding the kind into _redownload also fixes a
+        # mis-flagged .mp4 re-downloading as if it were audio.
+        is_video = self._entry_video_kind(entry) == "video"
+        vid = self._entry_video_path(entry)
         tile = ctk.CTkFrame(parent, width=w, corner_radius=UITheme.RADIUS_MD)
 
         # Poster area: a fixed-size well so tiles stay aligned while posters
@@ -483,7 +534,7 @@ class HistoryPageMixin:
         poster.pack(fill="x", padx=6, pady=(6, 0))
         poster.pack_propagate(False)
         img_lbl = None
-        if is_video and filepath and os.path.exists(filepath):
+        if vid:
             img_lbl = ctk.CTkLabel(poster, text="...", font=UITheme.F(9),
                                    text_color="#95a5a6")
             img_lbl.pack(expand=True)
@@ -511,8 +562,8 @@ class HistoryPageMixin:
             command=lambda u=entry.get("url", ""), v=is_video:
                 self._redownload(u, v))
         btn_dl.pack(side="left", expand=True, fill="x")
-        if is_video and filepath and os.path.exists(filepath):
-            tile.bind("<Button-1>", lambda e, p=filepath: self._open_file(p))
+        if vid:
+            tile.bind("<Button-1>", lambda e, p=vid: self._open_file(p))
         return tile, img_lbl
 
     def _load_gallery_thumbs(self, pending):
@@ -533,24 +584,31 @@ class HistoryPageMixin:
             return
         size = (self._GALLERY_TILE_W - 12, self._GALLERY_THUMB_H)
         for path, img_lbl in pending:
+            tk_img = None
             try:
-                if not path or not os.path.exists(path):
-                    continue
-                thumb_path = downloader.extract_video_thumbnail(path)
-                if not thumb_path or not os.path.exists(thumb_path):
-                    continue
-                img = Image.open(thumb_path)
-                img.load()
-                disp = img.convert("RGB").resize(size)
-                tk_img = ctk_image(light_image=disp, dark_image=disp,
-                                   size=size)
-                img_lbl._gallery_photo = tk_img
-                self.after(0, lambda l=img_lbl, t=tk_img:
-                           l.configure(image=t, text="")
-                           if l.winfo_exists() else None)
+                thumb_path = (
+                    downloader.extract_video_thumbnail(path)
+                    if path and os.path.exists(path) else None)
+                if thumb_path and os.path.exists(thumb_path):
+                    img = Image.open(thumb_path)
+                    img.load()
+                    disp = img.convert("RGB").resize(size)
+                    tk_img = ctk_image(light_image=disp, dark_image=disp,
+                                       size=size)
             except Exception:
                 logger.debug("Gallery thumb failed for %s", path,
                              exc_info=True)
+            if tk_img is None:
+                # ffmpeg or Pillow could not produce a frame: say so instead
+                # of leaving the "..." well waiting forever.
+                self.after(0, lambda l=img_lbl:
+                           l.configure(text="No preview")
+                           if l.winfo_exists() else None)
+                continue
+            img_lbl._gallery_photo = tk_img
+            self.after(0, lambda l=img_lbl, t=tk_img:
+                       l.configure(image=t, text="")
+                       if l.winfo_exists() else None)
 
     def _redownload(self, url, is_video):
         """Re-download a URL from history by injecting it into the downloader."""

@@ -282,6 +282,31 @@ class HistoryGalleryTests(unittest.TestCase):
         self.assertNotIn("urllib", loader)
         self.assertNotIn("urlopen", loader)
 
+    def test_the_classifier_reads_the_real_file_not_the_flag(self):
+        # The reported bug: tiles showed the word "Video" instead of a
+        # poster, because existing history rows record .mp4 downloads with
+        # is_video false and some rows store a folder as filepath. The
+        # extension decides; the flag only breaks ties.
+        src = self._page()
+        self.assertIn("_GALLERY_VIDEO_EXTS", src)
+        self.assertIn("_GALLERY_AUDIO_EXTS", src)
+        kind = self._method("_entry_video_kind")
+        self.assertLess(kind.index("in cls._GALLERY_AUDIO_EXTS"),
+                        kind.index('entry.get("is_video")'))
+        self.assertLess(kind.index("in cls._GALLERY_VIDEO_EXTS"),
+                        kind.index('entry.get("is_video")'))
+        # Folder filepath rows resolve to the media file inside them.
+        resolved = self._method("_entry_resolved_path")
+        self.assertIn("downloader.pick_produced_media_file(path)", resolved)
+        # Tiles ask for the resolved path and the kind, never the raw flag.
+        tile = self._method("_build_gallery_tile")
+        self.assertIn("vid = self._entry_video_path(entry)", tile)
+        self.assertIn('self._entry_video_kind(entry) == "video"', tile)
+
+    def test_a_failed_grab_says_so_instead_of_hanging(self):
+        loader = self._method("_load_gallery_thumbs")
+        self.assertIn('"No preview"', loader)
+
 
 if __name__ == "__main__":
     unittest.main()

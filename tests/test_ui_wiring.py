@@ -3244,6 +3244,9 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
         clip = os.path.join(tmp.name, "clip.mp4")
         with open(clip, "wb") as fh:
             fh.write(b"\x00" * 64)
+        shadow = os.path.join(tmp.name, "shadow.mp4")
+        with open(shadow, "wb") as fh:
+            fh.write(b"\x00" * 64)
         entries = [
             {"url": "https://example.invalid/v", "title": "Clip",
              "filepath": clip, "status": "done", "is_video": True,
@@ -3251,6 +3254,11 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
             {"url": "https://example.invalid/a", "title": "Song",
              "filepath": os.path.join(tmp.name, "gone.mp3"),
              "status": "done", "is_video": False, "completed_at": 2.0},
+            # The reported bug itself: a real .mp4 recorded with the audio
+            # flag. It must still get a poster well, not "Video" text.
+            {"url": "https://example.invalid/s", "title": "Shadow",
+             "filepath": shadow, "status": "done", "is_video": False,
+             "completed_at": 3.0},
         ]
         orig_pref = app._history_view_pref()
         self.addCleanup(app._set_pref, "history_view", orig_pref)
@@ -3264,13 +3272,16 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
         widgets = list(app._iter_widgets(app._history_entries_frame))
         btn_texts = [w.cget("text") for w in widgets
                      if isinstance(w, ctk.CTkButton)]
-        # Two entries -> two tiles, each offering the list row's actions.
-        self.assertEqual(btn_texts.count("Re-download"), 2)
-        self.assertEqual(btn_texts.count("Open"), 2)
+        # Three entries -> three tiles, each offering the list row's actions.
+        self.assertEqual(btn_texts.count("Re-download"), 3)
+        self.assertEqual(btn_texts.count("Open"), 3)
         label_texts = [w.cget("text") for w in widgets
                        if isinstance(w, ctk.CTkLabel)]
         # The audio entry keeps a neutral tile: video-only by decision.
         self.assertIn("Audio", label_texts)
+        # Both .mp4s got poster wells - including the one history mislabels
+        # as audio - so no tile fell back to the "Video" placeholder.
+        self.assertNotIn("Video", label_texts)
 
     def test_the_toggle_offers_both_views_and_list_is_the_default(self):
         app = type(self).app
@@ -3280,6 +3291,61 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
         self.assertIsNotNone(toggle, "view toggle missing from history page")
         assert toggle is not None  # narrows for the type checker
         self.assertEqual(list(toggle.cget("values")), ["List", "Gallery"])
+
+
+@requires_ctk
+class HistoryGalleryClassifierTests(unittest.TestCase):
+    """The gallery's video/audio decision must survive lying history rows.
+
+    Real download_history.json rows record .mp4 files with is_video false
+    (the direct-download path wrote the wrong flag) and some store a folder
+    as filepath. Deciding from the flag alone gave those videos a text
+    placeholder instead of a poster - the reported bug.
+    """
+
+    @staticmethod
+    def _entry(path, is_video):
+        return {"url": "https://example.invalid/x", "title": "T",
+                "filepath": path, "is_video": is_video}
+
+    @staticmethod
+    def _write(path):
+        with open(path, "wb") as fh:
+            fh.write(b"\x00" * 32)
+
+    def test_an_mp4_with_a_false_flag_is_still_a_video(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "clip.mp4")
+            self._write(p)
+            e = self._entry(p, False)
+            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+                             "video")
+            self.assertEqual(ui.HistoryPageMixin._entry_video_path(e), p)
+
+    def test_an_mp3_is_audio_even_with_a_poisoned_true_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "song.mp3")
+            self._write(p)
+            e = self._entry(p, True)
+            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+                             "audio")
+            self.assertIsNone(ui.HistoryPageMixin._entry_video_path(e))
+
+    def test_a_folder_filepath_resolves_to_the_media_inside(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "clip.mp4")
+            self._write(p)
+            e = self._entry(tmp, False)   # history stored the FOLDER
+            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+                             "video")
+            self.assertEqual(ui.HistoryPageMixin._entry_video_path(e), p)
+
+    def test_a_missing_video_still_reads_as_video_for_the_placeholder(self):
+        # _entry_video_path is None (no frame to grab) but the kind still
+        # says video, so the placeholder reads "Video", not "Audio".
+        e = self._entry("/gone/nowhere.mp4", False)
+        self.assertIsNone(ui.HistoryPageMixin._entry_video_path(e))
+        self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e), "video")
 
 
 if __name__ == "__main__":
