@@ -2778,8 +2778,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._ensure_page_built(name)
         # Re-clicking the already-active nav button must not remap pages,
         # force repaints, or restart animations — that churn was part of
-        # the residual black-flash on click-through.
+        # the residual black-flash on click-through. History is the
+        # exception: its refresh is deferred (see below), so a same-page
+        # revisit still needs to cancel + reschedule, coalescing rapid
+        # hops into one rebuild instead of stacking redundant ones.
         if name == getattr(self, '_current_page', None):
+            if name == "history":
+                self._schedule_history_refresh()
             return
         pages = self._page_frames
         page_titles = {
@@ -2834,11 +2839,43 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._set_active_nav(name)
         self._current_page = name
 
-        # Refresh dynamic tabs when they become visible
+        # Refresh dynamic tabs when they become visible. History defers to a
+        # short timer: show_frame already forced a paint above, and a
+        # synchronous destroy + rebuild of every history widget here would be
+        # a second paint of an intermediate state (old tiles, then empty,
+        # then new tiles) - the flicker seen on this tab. Deferred, Tk
+        # coalesces the rebuild into the next frame. Any already-queued
+        # deferred refresh is cancelled first so rapid tab-hopping does not
+        # stack up redundant rebuilds. The timer (not after(0)) matters:
+        # show_frame calls update_idletasks mid-switch and Tk services
+        # after(0)/after-idle callbacks there, so an after(0) refresh would
+        # fire while hopping AWAY and rebuild the grid off-screen.
         if name == "history":
-            self._refresh_history_view()
+            self._schedule_history_refresh()
         elif name == "queue":
             self._refresh_queue_tab()
+
+    def _schedule_history_refresh(self):
+        """Queue a deferred history rebuild, cancelling any pending one.
+
+        Uses a short timer (not after(0)): show_frame itself calls
+        update_idletasks mid-switch, and Tk services after(0)/after-idle
+        callbacks there - so an after(0) refresh scheduled on the way to
+        History would fire while hopping AWAY again, rebuilding the grid
+        off-screen and defeating the coalescing. A real timer only fires
+        on a full event-loop pump, so rapid tab hops cancel down to one.
+        """
+        try:
+            pending = getattr(self, "_history_refresh_after", None)
+            if pending:
+                self.after_cancel(pending)
+        except Exception:
+            pass
+        try:
+            self._history_refresh_after = self.after(
+                15, self._refresh_history_view)
+        except Exception:
+            self._refresh_history_view()
 
     def _set_active_nav(self, active_name: str):
         # Skip entirely when nothing changed: a repaint redraws every row

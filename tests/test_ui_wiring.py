@@ -3302,6 +3302,65 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
                      if isinstance(w, ctk.CTkButton)]
         self.assertEqual(btn_texts.count("Re-download"), 5)
 
+    def test_deferred_refresh_fires_once_after_rapid_tab_hops(self):
+        """show_frame('history') defers the rebuild instead of painting twice.
+
+        The flicker came from show_frame forcing a paint and then
+        synchronously destroying + rebuilding every history widget in the
+        same event cycle (old tiles, then empty, then new tiles). The refresh
+        must be deferred via a short after() timer so Tk coalesces it into
+        the next frame, and rapid tab hops must coalesce to a single rebuild:
+        each visit cancels the previous pending one. (A plain after(0) does
+        NOT coalesce: show_frame's own update_idletasks services after-idle
+        callbacks, so the first refresh would fire while hopping away and
+        rebuild the grid off-screen.)
+        """
+        app = type(self).app
+        # Ensure the page is already built: the first-ever visit runs a
+        # synchronous build-time refresh inside build_history_view, which
+        # would count as an extra fire and mask the coalescing under test.
+        app.show_frame("history")
+        app.update()
+        app.show_frame("downloader")
+        app.update()
+        try:
+            pending = getattr(app, "_history_refresh_after", None)
+            if pending:
+                try:
+                    app.after_cancel(pending)
+                except Exception:
+                    pass
+                app._history_refresh_after = None
+            app.after(50)  # let any in-flight timer elapse
+            app.update()
+        except Exception:
+            pass
+        # Patch at CLASS level: _schedule_history_refresh binds
+        # self._refresh_history_view at schedule time, so an instance
+        # attribute set afterwards would never be seen by the callback.
+        cls = type(app)
+        orig = cls._refresh_history_view
+        fired = []
+        cls._refresh_history_view = lambda self_, *a, **k: (
+            fired.append(1), orig(self_, *a, **k))[1]
+        try:
+            # Rapid hops inside ONE event cycle: no update() in between, so
+            # each visit must cancel the previous pending refresh rather
+            # than stacking. (Pumping mid-sequence would legitimately fire
+            # the first one - that is a settled frame, not flicker.)
+            app.show_frame("history")
+            app.show_frame("downloader")
+            app.show_frame("history")
+            app.update()  # pump the loop: the deferred refresh fires here
+            app.update_idletasks()
+            app.after(50)  # let the short timer elapse
+            app.update()
+        finally:
+            cls._refresh_history_view = orig
+        self.assertEqual(len(fired), 1,
+                         "rapid tab hops should coalesce to a single "
+                         "deferred history rebuild")
+
     def test_the_toggle_offers_both_views_and_list_is_the_default(self):
         app = type(self).app
         orig_pref = app._history_view_pref()
@@ -3337,45 +3396,56 @@ class HistoryGalleryClassifierTests(unittest.TestCase):
         with open(path, "wb") as fh:
             fh.write(b"\x00" * 32)
 
+    @staticmethod
+    def _mixin():
+        # The classifier is instance-backed (folder resolutions cache on
+        # self); a bare instance without __init__ is enough to drive it.
+        return ui.HistoryPageMixin.__new__(ui.HistoryPageMixin)
+
     def test_an_mp4_with_a_false_flag_is_still_a_video(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = os.path.join(tmp, "clip.mp4")
             self._write(p)
             e = self._entry(p, False)
-            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+            m = self._mixin()
+            self.assertEqual(m._entry_video_kind(e),
                              "video")
-            self.assertEqual(ui.HistoryPageMixin._entry_video_path(e), p)
+            self.assertEqual(m._entry_video_path(e), p)
 
     def test_an_mp3_is_audio_even_with_a_poisoned_true_flag(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = os.path.join(tmp, "song.mp3")
             self._write(p)
             e = self._entry(p, True)
-            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+            m = self._mixin()
+            self.assertEqual(m._entry_video_kind(e),
                              "audio")
-            self.assertIsNone(ui.HistoryPageMixin._entry_video_path(e))
-            self.assertEqual(ui.HistoryPageMixin._entry_audio_path(e), p)
+            self.assertIsNone(m._entry_video_path(e))
+            self.assertEqual(m._entry_audio_path(e), p)
 
     def test_a_missing_mp3_has_no_audio_path_for_its_placeholder(self):
         e = self._entry("/gone/nowhere.mp3", False)
-        self.assertIsNone(ui.HistoryPageMixin._entry_audio_path(e))
-        self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e), "audio")
+        m = self._mixin()
+        self.assertIsNone(m._entry_audio_path(e))
+        self.assertEqual(m._entry_video_kind(e), "audio")
 
     def test_a_folder_filepath_resolves_to_the_media_inside(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = os.path.join(tmp, "clip.mp4")
             self._write(p)
             e = self._entry(tmp, False)   # history stored the FOLDER
-            self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e),
+            m = self._mixin()
+            self.assertEqual(m._entry_video_kind(e),
                              "video")
-            self.assertEqual(ui.HistoryPageMixin._entry_video_path(e), p)
+            self.assertEqual(m._entry_video_path(e), p)
 
     def test_a_missing_video_still_reads_as_video_for_the_placeholder(self):
         # _entry_video_path is None (no frame to grab) but the kind still
         # says video, so the placeholder reads "Video", not "Audio".
         e = self._entry("/gone/nowhere.mp4", False)
-        self.assertIsNone(ui.HistoryPageMixin._entry_video_path(e))
-        self.assertEqual(ui.HistoryPageMixin._entry_video_kind(e), "video")
+        m = self._mixin()
+        self.assertIsNone(m._entry_video_path(e))
+        self.assertEqual(m._entry_video_kind(e), "video")
 
 
 if __name__ == "__main__":

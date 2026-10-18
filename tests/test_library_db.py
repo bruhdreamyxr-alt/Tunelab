@@ -274,11 +274,13 @@ class HistoryGalleryTests(unittest.TestCase):
         loader = self._method("_load_gallery_thumbs")
         self.assertIn("downloader.extract_video_thumbnail(path)", loader)
         self.assertIn("downloader.extract_audio_artwork(path)", loader)
-        # Only the main thread may touch Tk: the image lands via self.after
-        # behind a winfo_exists guard, so a tile destroyed mid-load (page
-        # switch, refresh) is simply skipped.
-        self.assertIn("self.after(0, lambda l=img_lbl", loader)
-        self.assertIn("l.winfo_exists()", loader)
+        # Only the main thread may touch Tk: the images land in one after(0)
+        # batch behind winfo_exists guards, so a tile destroyed mid-load
+        # (page switch, refresh) is simply skipped. Batched, not one
+        # callback per tile: N separate wakes each paint an intermediate
+        # grid state, which reads as flicker.
+        self.assertIn("self.after(0, _apply)", loader)
+        self.assertIn(".winfo_exists()", loader)
         # Local files only: nothing here fetches remotely.
         self.assertNotIn("urllib", loader)
         self.assertNotIn("urlopen", loader)
@@ -292,9 +294,9 @@ class HistoryGalleryTests(unittest.TestCase):
         self.assertIn("_GALLERY_VIDEO_EXTS", src)
         self.assertIn("_GALLERY_AUDIO_EXTS", src)
         kind = self._method("_entry_video_kind")
-        self.assertLess(kind.index("in cls._GALLERY_AUDIO_EXTS"),
+        self.assertLess(kind.index("in self._GALLERY_AUDIO_EXTS"),
                         kind.index('entry.get("is_video")'))
-        self.assertLess(kind.index("in cls._GALLERY_VIDEO_EXTS"),
+        self.assertLess(kind.index("in self._GALLERY_VIDEO_EXTS"),
                         kind.index('entry.get("is_video")'))
         # Folder filepath rows resolve to the media file inside them.
         resolved = self._method("_entry_resolved_path")

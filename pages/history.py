@@ -237,6 +237,21 @@ class HistoryPageMixin:
         """
         history = self._history_entries()
         total_all = len(history)
+        # Folder->media resolutions are only valid for this pass: a prune or
+        # an outside delete can change what a folder holds, so a cache that
+        # lived across refreshes could serve a stale poster. Reset per
+        # refresh; within one refresh the same folder is still asked several
+        # times per entry (kind + video/audio path, grid + tile), so the
+        # cache still removes the repeated directory scans.
+        try:
+            self._history_folder_cache = {}
+        except Exception:
+            pass
+        # Keep the unfiltered list: the prune button counts missing files
+        # across ALL of history, and a search must not hide that count.
+        # Counting from the already-fetched list (not a second DB + JSON
+        # fetch via _missing_history_count) keeps a page switch to one read.
+        full_history = history
 
         # Apply search filter. A visible placeholder is stored in the same
         # StringVar as real input (customtkinter inserts it straight into the
@@ -296,8 +311,14 @@ class HistoryPageMixin:
 
         # Only offer the prune when there is something to prune, and count from
         # the unfiltered list so a search box cannot make a missing file look
-        # like there is nothing to clean up.
-        missing = self._missing_history_count()
+        # like there is nothing to clean up. Counted from the entries already
+        # in hand: _missing_history_count() would re-fetch the history (a
+        # second DB read + JSON parse + migration check) on every refresh.
+        missing = sum(
+            1 for e in full_history
+            if isinstance(e, dict)
+            and str(e.get("filepath") or "")
+            and not os.path.exists(str(e.get("filepath"))))
         try:
             self.btn_prune_history.configure(
                 state="normal" if missing else "disabled",
@@ -445,48 +466,68 @@ class HistoryPageMixin:
     _GALLERY_AUDIO_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg",
                            ".opus", ".wma", ".aiff", ".aif")
 
-    @classmethod
-    def _entry_resolved_path(cls, entry) -> str:
-        """The entry's file: a folder filepath resolves to the media inside."""
+    def _entry_resolved_path(self, entry) -> str:
+        """The entry's file: a folder filepath resolves to the media inside.
+
+        Folder resolutions are cached on self keyed by folder path:
+        pick_produced_media_file scans the directory (getmtime per file), and
+        without the cache every gallery redraw re-scanned the same folder
+        once per classifier call - several scans per entry per refresh. The
+        dict itself is deliberately NOT mutated: the signature tuple in
+        _refresh_history_view hashes entry contents, and an extra key would
+        both leak into comparisons and never match across fresh DB reads.
+        """
         path = str(entry.get("filepath") or "")
         if path and os.path.isdir(path):
             try:
-                path = downloader.pick_produced_media_file(path) or ""
+                cache = getattr(self, "_history_folder_cache", None)
+                if cache is None:
+                    cache = self._history_folder_cache = {}
+                if path in cache:
+                    return cache[path]
+                resolved = downloader.pick_produced_media_file(path) or ""
+                cache[path] = resolved
+                # Folders come and go; an unbounded cache of dead paths is a
+                # slow leak, so cap it well above any real history size.
+                if len(cache) > 512:
+                    try:
+                        cache.pop(next(iter(cache)))
+                    except Exception:
+                        pass
+                path = resolved
             except Exception:
                 path = ""
         return path
 
-    @classmethod
-    def _entry_video_kind(cls, entry) -> str:
+    def _entry_video_kind(self, entry) -> str:
         """'video' or 'audio' from the actual file, never the flag alone.
 
         A recognized extension always decides (an .mp4 is a video even when
         history says otherwise); the flag only breaks ties for containers
         not listed above.
         """
-        path = cls._entry_resolved_path(entry)
+        path = self._entry_resolved_path(entry)
         ext = os.path.splitext(path)[1].lower()
-        if ext in cls._GALLERY_AUDIO_EXTS:
+        if ext in self._GALLERY_AUDIO_EXTS:
             return "audio"
-        if ext in cls._GALLERY_VIDEO_EXTS:
+        if ext in self._GALLERY_VIDEO_EXTS:
             return "video"
         return "video" if entry.get("is_video") else "audio"
 
-    @classmethod
-    def _entry_video_path(cls, entry) -> Optional[str]:
+    def _entry_video_path(self, entry) -> Optional[str]:
         """The existing local video file to grab a frame from, or None."""
-        if cls._entry_video_kind(entry) != "video":
+        if self._entry_video_kind(entry) != "video":
             return None
-        path = cls._entry_resolved_path(entry)
+        path = self._entry_resolved_path(entry)
         if not path or not os.path.isfile(path):
             return None
         return path
-    @classmethod
-    def _entry_audio_path(cls, entry):
+
+    def _entry_audio_path(self, entry):
         """The existing local audio file to pull cover art from, or None."""
-        if cls._entry_video_kind(entry) != "audio":
+        if self._entry_video_kind(entry) != "audio":
             return None
-        path = cls._entry_resolved_path(entry)
+        path = self._entry_resolved_path(entry)
         if not path or not os.path.isfile(path):
             return None
         return path
@@ -584,14 +625,20 @@ class HistoryPageMixin:
         return tile, img_lbl
 
     def _load_gallery_thumbs(self, pending):
-        """Worker: grab a poster per tile, then apply images on the UI thread.
+        """Worker: grab posters per tile, then apply images on the UI thread.
 
-        Runs off-thread (thumbnail extraction is an ffmpeg subprocess). Each
-        image is handed back through self.after() and re-checked for a live
-        widget at application time - a refresh or a page switch may have
-        destroyed the tile between scheduling and application. The opened
-        Pillow image is pinned on the label (``_gallery_photo``) so Tk never
-        holds a reference to a freed bitmap.
+        Runs off-thread (thumbnail extraction is an ffmpeg subprocess, cover
+        reads parse the audio files). Only plain Pillow images are built
+        here: CTkImage wraps a Tk photo image and MUST be created on the UI
+        thread, so the worker hands Pillow images back and the single
+        after(0) batch constructs each CTkImage just before configuring its
+        label. One batch, not one callback per tile: N separate after(0)
+        callbacks mean N separate event-loop wakes, each painting an
+        intermediate grid state (tile 1 filled, tiles 2..N still "..."),
+        which reads as flicker. The batch applies only to tiles still alive
+        - a refresh or page switch may have destroyed some between
+        scheduling and application. The CTkImages are pinned on the labels
+        (``_gallery_photo``) so Tk never holds a freed bitmap.
         """
         Image = downloader._mod_image()
         ctk_image = getattr(ctk, "CTkImage", None)
@@ -600,12 +647,14 @@ class HistoryPageMixin:
             logger.debug("Gallery posters unavailable (Pillow missing)")
             return
         size = (self._GALLERY_TILE_W - 12, self._GALLERY_THUMB_H)
+        ready = []    # (img_lbl, PIL-display-image) successfully built
+        missing = []  # img_lbl with no producible poster
         for item in pending:
             if len(item) == 3:
                 kind, path, img_lbl = item
             else:
                 kind, path, img_lbl = "video", item[0], item[1]
-            tk_img = None
+            disp = None
             try:
                 if kind == "audio":
                     thumb_path = (
@@ -619,22 +668,43 @@ class HistoryPageMixin:
                     img = Image.open(thumb_path)
                     img.load()
                     disp = img.convert("RGB").resize(size)
-                    tk_img = ctk_image(light_image=disp, dark_image=disp,
-                                       size=size)
             except Exception:
                 logger.debug("Gallery thumb failed for %s", path,
                              exc_info=True)
-            if tk_img is None:
-                # ffmpeg or Pillow could not produce a frame: say so instead
-                # of leaving the "..." well waiting forever.
-                self.after(0, lambda l=img_lbl:
-                           l.configure(text="No preview")
-                           if l.winfo_exists() else None)
-                continue
-            img_lbl._gallery_photo = tk_img
-            self.after(0, lambda l=img_lbl, t=tk_img:
-                       l.configure(image=t, text="")
-                       if l.winfo_exists() else None)
+            if disp is None:
+                missing.append(img_lbl)
+            else:
+                ready.append((img_lbl, disp))
+        if not ready and not missing:
+            return
+        # One trip to the UI thread for the whole grid. Dead tiles are
+        # skipped; a label the user cannot see is left alone rather than
+        # touched. Pinning first keeps the bitmap alive past this callback.
+        def _apply():
+            for img_lbl, disp_img in ready:
+                try:
+                    if not img_lbl.winfo_exists():
+                        continue
+                    tk_img = ctk_image(light_image=disp_img,
+                                       dark_image=disp_img, size=size)
+                    img_lbl._gallery_photo = tk_img
+                    img_lbl.configure(image=tk_img, text="")
+                except Exception:
+                    pass
+            for img_lbl in missing:
+                # Nothing producible (ffmpeg/Pillow failed, or the file went
+                # away since the grid was drawn): say so instead of leaving
+                # the "..." well waiting forever.
+                try:
+                    if img_lbl.winfo_exists():
+                        img_lbl.configure(text="No preview")
+                except Exception:
+                    pass
+        try:
+            self.after(0, _apply)
+        except Exception:
+            logger.debug("Gallery poster apply skipped (window closing)",
+                         exc_info=True)
 
     def _redownload(self, url, is_video):
         """Re-download a URL from history by injecting it into the downloader."""
