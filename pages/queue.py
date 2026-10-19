@@ -117,8 +117,11 @@ class QueuePageMixin:
 
         # Single horizontal toolbar: primary Start, ghost utilities,
         # muted-red destructive actions.
+        # fill="x" so the bar spans the window width and its buttons are never
+        # pushed past the right edge on narrow windows; padx keeps them clear
+        # of the window frame like every other control band on the page.
         queue_btn_row = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
-        queue_btn_row.pack(pady=(0, 6))
+        queue_btn_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, 6))
 
         self.btn_queue_start = ctk.CTkButton(
             queue_btn_row, text="Start", width=80, height=UITheme.H_CTRL,
