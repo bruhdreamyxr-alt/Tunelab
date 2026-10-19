@@ -535,6 +535,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._unfocused_done: int = 0
         self._queue_refresh_pending: bool = False
         self._history_view_sig: Any = None
+        # Async-history state: the refresh splits into a worker read plus a
+        # main-thread render, so a tab switch never blocks on disk. The
+        # generation counter drops stale callbacks: hopping away and back
+        # starts a new read, and the old worker's result is discarded when
+        # it lands (its after() was already serviced by the event loop).
+        self._history_read_gen: int = 0
+        self._history_read_pending: bool = False
         # Last URL/mode started, so a failed download's dialog can offer
         # "Try again" without the user re-pasting the link.
         self._last_dl_url: str = ""
@@ -2875,6 +2882,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         History would fire while hopping AWAY again, rebuilding the grid
         off-screen and defeating the coalescing. A real timer only fires
         on a full event-loop pump, so rapid tab hops cancel down to one.
+
+        The timer fires _refresh_history_async, which reads SQLite/JSON on
+        a worker thread and renders on the main thread: the tab switch
+        itself never blocks on disk.
         """
         try:
             pending = getattr(self, "_history_refresh_after", None)
@@ -2884,9 +2895,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         try:
             self._history_refresh_after = self.after(
-                15, self._refresh_history_view)
+                15, self._refresh_history_async)
         except Exception:
-            self._refresh_history_view()
+            self._refresh_history_async()
 
     def _set_active_nav(self, active_name: str):
         # Skip entirely when nothing changed: a repaint redraws every row

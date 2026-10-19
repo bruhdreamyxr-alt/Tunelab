@@ -227,15 +227,35 @@ class HistoryPageMixin:
                          exc_info=True)
         return records
 
-    def _refresh_history_view(self, force: bool = False):
+    def _refresh_history_view(self, force: bool = False,
+                              _entries=None, _missing: "int | None" = None):
         """Rebuild the history entry list from the saved history file.
 
         Skips the (expensive) widget rebuild when the filtered and sorted
         result matches what is already on screen: show_frame calls this
         every time the tab opens, and recreating every row on each visit
         was a visible stutter.
+
+        The disk work (SQLite/JSON read, migration, exists() probes) can
+        arrive pre-fetched from the _refresh_history_async worker through
+        ``_entries``/``_missing``: then the body below is a pure main-thread
+        render and never touches the disk. A direct call with no overrides
+        reads synchronously - the path the tests and the explicit actions
+        (clear, prune, sort, search) take. The synchronous read claims the
+        next async generation first, so a tab-switch read already in flight
+        cannot land after it and overwrite the fresh result.
         """
-        history = self._history_entries()
+        if _entries is None:
+            try:
+                self._history_read_gen = int(
+                    getattr(self, "_history_read_gen", 0)) + 1
+            except Exception:
+                try:
+                    self._history_read_gen = 1
+                except Exception:
+                    pass
+            _entries = self._history_entries()
+        history = _entries
         total_all = len(history)
         # Folder->media resolutions are only valid for this pass: a prune or
         # an outside delete can change what a folder holds, so a cache that
@@ -314,11 +334,15 @@ class HistoryPageMixin:
         # like there is nothing to clean up. Counted from the entries already
         # in hand: _missing_history_count() would re-fetch the history (a
         # second DB read + JSON parse + migration check) on every refresh.
-        missing = sum(
-            1 for e in full_history
-            if isinstance(e, dict)
-            and str(e.get("filepath") or "")
-            and not os.path.exists(str(e.get("filepath"))))
+        # The async worker pre-computes this off-thread and hands it in as
+        # _missing, so the tab-switch render never probes the disk either.
+        if _missing is None:
+            _missing = sum(
+                1 for e in full_history
+                if isinstance(e, dict)
+                and str(e.get("filepath") or "")
+                and not os.path.exists(str(e.get("filepath"))))
+        missing = _missing
         try:
             self.btn_prune_history.configure(
                 state="normal" if missing else "disabled",
@@ -365,6 +389,72 @@ class HistoryPageMixin:
             )
             self._style_button(more, "ghost")
             more.pack(pady=8)
+    # --- Async tab-switch read ---------------------------------------------
+    # The tab switch itself must never wait on disk: the SQLite read, the
+    # JSON fallback, the one-time migration and the per-entry exists()
+    # probes all run here on a worker thread. Only plain data crosses back
+    # to the main thread, where _refresh_history_view renders it. The
+    # generation counter drops stale results: hopping away and back starts
+    # a newer read, and the older worker's payload is discarded on arrival.
+
+    def _refresh_history_async(self, force: bool = False):
+        """Re-read history off the UI thread, then render on it."""
+        try:
+            self._history_read_gen = int(
+                getattr(self, "_history_read_gen", 0)) + 1
+        except Exception:
+            self._history_read_gen = 1
+        gen = self._history_read_gen
+        if getattr(self, "_history_read_pending", False):
+            if force:
+                try:
+                    self.after(
+                        0,
+                        lambda: self._refresh_history_view(force=True))
+                except Exception:
+                    pass
+            return
+        self._history_read_pending = True
+
+        def _read():
+            try:
+                entries = self._history_entries()
+            except Exception:
+                logger.debug("Async history read failed", exc_info=True)
+                entries = []
+            try:
+                missing = sum(
+                    1 for e in entries
+                    if isinstance(e, dict)
+                    and str(e.get("filepath") or "")
+                    and not os.path.exists(str(e.get("filepath"))))
+            except Exception:
+                missing = 0
+
+            def _apply():
+                self._history_read_pending = False
+                if gen != getattr(self, "_history_read_gen", gen):
+                    return
+                try:
+                    self._refresh_history_view(
+                        force=True, _entries=entries, _missing=missing)
+                except Exception:
+                    logger.debug("Async history render failed", exc_info=True)
+            try:
+                self.after(0, _apply)
+            except Exception:
+                self._history_read_pending = False
+
+        try:
+            import threading as _th
+            _th.Thread(target=_read, daemon=True).start()
+        except Exception:
+            self._history_read_pending = False
+            try:
+                self._refresh_history_view(force=force)
+            except Exception:
+                logger.debug("Sync history fallback failed", exc_info=True)
+
 
     def _add_history_entry(self, idx, entry):
         """Add a single history row with title, date, status, and re-download."""
