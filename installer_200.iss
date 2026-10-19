@@ -31,6 +31,13 @@ Compression=lzma2
 SolidCompression=yes
 ; The installer's own icon, same asset the .exe and the app window use.
 SetupIconFile=assets\tune_lab.ico
+; The "Select Start Menu Folder" page used to open with an empty field. The
+; shortcuts below are written straight to autoprograms - the group constant
+; is never referenced - so the page has no effect on where anything lands:
+; disable it outright, and still give Inno a default group name so anything
+; that ever resolves the group (or a future edit) is never blank.
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

@@ -341,6 +341,24 @@ class WindowsToolingTests(unittest.TestCase):
         self.assertIn("#ifndef OutputBase", text)
         self.assertIn("OutputBaseFilename={#OutputBase}", text)
 
+    def test_installer_never_shows_a_blank_start_menu_folder_page(self):
+        """The Select Start Menu Folder page opened with an empty field.
+
+        The [Icons] entries target autoprograms directly - the group constant
+        appears nowhere - so the page neither had a default nor affected
+        anything. It must be disabled, and a default group name kept.
+        """
+        text = _read("installer_200.iss")
+        self.assertIn("DefaultGroupName={#AppName}", text)
+        self.assertIn("DisableProgramGroupPage=yes", text)
+        # Strip the [Setup] comment block first: it names the constant only
+        # to explain why the page is disabled, and assertNotIn would trip
+        # on its own explanation.
+        code = "\n".join(
+            line for line in text.splitlines()
+            if not line.strip().startswith(";"))
+        self.assertNotIn("{group}", code)
+
     def test_installer_has_no_absolute_paths(self):
         """Absolute paths are why the installer only worked on one machine."""
         for line in _read("installer_200.iss").splitlines():
