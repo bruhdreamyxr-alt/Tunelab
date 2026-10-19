@@ -488,9 +488,44 @@ class HistoryPageMixin:
         row = ctk.CTkFrame(self._history_entries_frame, fg_color="transparent")
         row.pack(fill="x", pady=3, padx=4)
 
-        # Left: title + metadata
+        # Right: status badge + buttons — packed FIRST so it always keeps its
+        # space and never gets pushed off the right edge by a long title on
+        # narrow windows (the old left-first expand=True layout hid the
+        # re-download/open buttons unless the window was full screen).
+        right = ctk.CTkFrame(row, fg_color="transparent")
+        right.pack(side="right", fill="y", padx=(6, 0))
+
+        status_lbl = ctk.CTkLabel(right, text=status.upper(), font=UITheme.F(10, "bold"),
+                                  text_color=status_color, width=70)
+        status_lbl.pack(side="left", padx=(0, 6))
+
+        # Re-download button
+        btn_redl = ctk.CTkButton(
+            right, text="", width=34, height=UITheme.H_SM,
+            command=lambda u=url, v=is_video: self._redownload(u, v),
+        )
+        self._style_button(btn_redl, "primary", icon="refresh")
+        btn_redl.pack(side="left", padx=2)
+        # Glyph-only buttons get hover tooltips (reusing the sidebar popup,
+        # which already avoids the transient-black-flicker traps).
+        btn_redl.bind("<Enter>", lambda e, b=btn_redl: self._schedule_sb_tooltip(b, "Re-download this URL", only_when_collapsed=False))
+        btn_redl.bind("<Leave>", lambda e: self._hide_sb_tooltip())
+
+        # Open file button (only if file exists)
+        if file_exists:
+            btn_open = ctk.CTkButton(
+                right, text="", width=34, height=UITheme.H_SM,
+                command=lambda p=filepath: self._open_file(p),
+            )
+            self._style_button(btn_open, "secondary", icon="folder")
+            btn_open.pack(side="left", padx=2)
+            btn_open.bind("<Enter>", lambda e, b=btn_open: self._schedule_sb_tooltip(b, "Open file", only_when_collapsed=False))
+            btn_open.bind("<Leave>", lambda e: self._hide_sb_tooltip())
+
+        # Left: title + metadata — takes whatever width remains after the
+        # action buttons claim theirs, so they stay visible at any window size.
         left = ctk.CTkFrame(row, fg_color="transparent")
-        left.pack(side="left", fill="both", expand=True)
+        left.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         title_lbl = ctk.CTkLabel(left, text=title, font=UITheme.F(12, "bold"),
                                  anchor="w", wraplength=380, justify="left")
@@ -502,10 +537,6 @@ class HistoryPageMixin:
         meta_lbl = ctk.CTkLabel(left, text=meta_text, font=UITheme.F(10),
                                 text_color="#7f8c8d", anchor="w")
         meta_lbl.pack(anchor="w")
-
-        # Right: status badge + buttons
-        right = ctk.CTkFrame(row, fg_color="transparent")
-        right.pack(side="right")
 
         status_lbl = ctk.CTkLabel(right, text=status.upper(), font=UITheme.F(10, "bold"),
                                   text_color=status_color, width=70)
