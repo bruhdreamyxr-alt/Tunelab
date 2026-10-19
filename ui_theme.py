@@ -542,6 +542,10 @@ class UITheme:
     # card whose fill is close to the window fill just looks like a flat
     # rectangle, and rounded corners stop reading as rounded.
     BORDER_W = 1
+    # Soft outer edge for containers that don't need to assert themselves:
+    # a muted mid-tone one step darker than surface, lighter than hover.
+    # Tk has no alpha, so this reads as low-opacity white on dark themes.
+    BORDER_SOFT = "#2a2a33"
 
     # Collapsible rail geometry. Nav rows are placed once at fixed pixel
     # coordinates inside the rail and never re-laid out: Tk clips child

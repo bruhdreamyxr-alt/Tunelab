@@ -899,30 +899,35 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         self._url_clear_btn_visible = False
 
-        # Row 1: the two download actions side by side (they used to be two
-        # more stacked full-width rows). MP3 is the screen's one accent.
+        # Row 1: a mode toggle plus one primary Download button, instead of
+        # two separate fills competing for attention.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         action_row.pack(pady=(0, UITheme.RHYTHM))
 
-        self.btn_download_mp3 = ctk.CTkButton(
-            action_row,
-            text="Download Audio (MP3)",
-            width=200, height=UITheme.H_LG,
-            cursor="hand2",
-            command=lambda: self._start_worker(self.download_mp3)
+        self.dl_mode_var = ctk.StringVar(value="audio")
+        self.dl_mode_toggle = ctk.CTkSegmentedButton(
+            action_row, values=["Audio", "Video"],
+            variable=self.dl_mode_var, width=150, height=UITheme.H_LG,
         )
-        self.btn_download_mp3.pack(side="left", padx=6)
-        self._style_button(self.btn_download_mp3, "primary")
+        self.dl_mode_toggle.pack(side="left")
+        self._style_option_menu(self.dl_mode_toggle)
 
-        self.btn_download_mp4 = ctk.CTkButton(
+        self.btn_download = ctk.CTkButton(
             action_row,
-            text="Download Video (MP4)",
-            width=200, height=UITheme.H_LG,
+            text="Download",
+            width=170, height=UITheme.H_LG,
             cursor="hand2",
-            command=lambda: self._start_worker(self.download_mp4)
+            command=self._start_download,
         )
-        self.btn_download_mp4.pack(side="left", padx=6)
-        self._style_button(self.btn_download_mp4, "secondary")
+        self.btn_download.pack(side="left", padx=(10, 0))
+        self._style_button(self.btn_download, "primary", icon="download")
+
+        self.btn_download.bind("<Enter>",
+                               lambda e: self._set_hover_detail(
+                                   "Download with the selected format "
+                                   "(audio or video).", "#ecf0f1"))
+        self.btn_download.bind("<Leave>",
+                               lambda e: self._restore_hover_detail())
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
@@ -988,10 +993,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.bind(
             "<<Paste>>", lambda e: self.after(1, self._sync_clear_btn)
         )
-        self.btn_download_mp3.bind("<Enter>", lambda e: self._set_hover_detail("Download MP3 with artwork and metadata.", "#ecf0f1"))
-        self.btn_download_mp3.bind("<Leave>", lambda e: self._restore_hover_detail())
-        self.btn_download_mp4.bind("<Enter>", lambda e: self._set_hover_detail("Download high quality MP4 video.", "#ecf0f1"))
-        self.btn_download_mp4.bind("<Leave>", lambda e: self._restore_hover_detail())
         self.btn_preview_audio.bind("<Enter>", lambda e: self._set_hover_detail("Listen to a quick 30s audio preview.", "#ecf0f1"))
         self.btn_preview_audio.bind("<Leave>", lambda e: self._restore_hover_detail())
         self.btn_preview_video.bind("<Enter>", lambda e: self._set_hover_detail("Preview video in the stream player.", "#ecf0f1"))
@@ -1286,7 +1287,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         buttons do. Returns "break" so Tk doesn't beep or move focus.
         """
         try:
-            if str(self.btn_download_mp3.cget("state")) == "disabled":
+            if str(self.btn_download.cget("state")) == "disabled":
                 # A direct download is running (the buttons are disabled
                 # while it is); mirror the buttons instead of racing it.
                 return "break"
@@ -1767,6 +1768,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         os._exit(0)
 
 
+    def _start_download(self):
+        """Route to audio or video download per the mode toggle."""
+        mode = self.dl_mode_var.get()
+        if mode == "video":
+            self.download_mp4()
+        else:
+            self.download_mp3()
+
     def download_mp3(self):
         url = self.url_entry.get().strip()
         if not url:
@@ -1853,7 +1862,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         try:
             # set_download_buttons_state(False) disables these for the whole
             # duration of a direct download, so their state is the flag.
-            return str(self.btn_download_mp3.cget("state")) == "disabled"
+            return str(self.btn_download.cget("state")) == "disabled"
         except Exception:
             return False
 
@@ -2097,8 +2106,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def set_download_buttons_state(self, enabled: bool):
         state = "normal" if enabled else "disabled"
-        self.after(0, lambda: self.btn_download_mp3.configure(state=state))
-        self.after(0, lambda: self.btn_download_mp4.configure(state=state))
+        self.after(0, lambda: self.btn_download.configure(state=state))
         # The cancel button mirrors the inverse state of the download buttons.
         cancel_state = "disabled" if enabled else "normal"
         self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
@@ -3171,10 +3179,22 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         tx = ctk.CTkLabel(row, text=label, font=UITheme.F(12), anchor="w",
                           cursor="hand2", height=UITheme.SB_ROW_H - 2)
         tx.place(x=UITheme.SB_TEXT_X, y=1)
-        hint = ctk.CTkLabel(row, text=self._SB_KEYS.get(name, ""),
-                            width=22, height=18, corner_radius=9,
-                            font=UITheme.F(9, "bold"))
-        hint.place(x=UITheme.SB_HINT_X, y=(UITheme.SB_ROW_H - 18) // 2)
+        # Shortcut slot: a subtle keycap badge (low-opacity fill, muted ink)
+        # instead of a bare digit. Shortcuts only; live badges go elsewhere.
+        shortcut = self._SB_KEYS.get(name, "")
+        hint = None
+        if shortcut:
+            keycap = ctk.CTkLabel(
+                row, text=shortcut, font=UITheme.F(9, "bold"),
+                width=22, height=18, corner_radius=9,
+                fg_color=UITheme.BORDER_SOFT,
+                text_color=(getattr(self, "_palette", {}) or {}).get(
+                    "sub", "#8a94a6"),
+            )
+            setattr(keycap, "_theme_roles",
+                    {"fg_color": "surface", "text_color": "sub"})
+            keycap.place(x=UITheme.SB_HINT_X, y=(UITheme.SB_ROW_H - 18) // 2)
+            hint = keycap
 
         self._sb_bind_clickable(
             row, (ic, tx, hint), lambda e, n=name: self.show_frame(n),

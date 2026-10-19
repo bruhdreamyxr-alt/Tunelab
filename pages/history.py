@@ -84,9 +84,10 @@ class HistoryPageMixin:
         self.history_view_toggle.pack(side="right", padx=(0, 12))
         self.history_view_toggle.set(self.history_view_var.get())
 
-        # Search bar
+        # Search bar + sort filters on one header row, so the page opens with
+        # one compact control band instead of two stacked strips.
         search_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
-        search_row.pack(fill="x", padx=20, pady=(0, 6))
+        search_row.pack(fill="x", padx=20, pady=(0, 8))
         self.history_search_var = ctk.StringVar()
         self.history_search_entry = ctk.CTkEntry(
             search_row,
@@ -113,22 +114,21 @@ class HistoryPageMixin:
             search_row, text="Search", font=UITheme.F(11),
             text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
         ).pack(side="left", padx=(0, 8))
-        self.history_search_entry.pack(side="left", fill="x", expand=True)
+        self.history_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 12))
         # Debounced: a rebuild destroys and recreates every row widget, so
         # firing it on every keystroke made typing a 4-char query cost ~14s on
         # a 200-row history. Refresh 150ms after the last keystroke instead.
         self._history_search_after = None
         self.history_search_var.trace_add("write", lambda *_: self._schedule_history_search())
 
-        # Sort controls
+        # Sort filters on the same row.
+        ctk.CTkLabel(search_row, text="Sort by:", font=UITheme.F(11),
+                     text_color="#95a5a6").pack(side="left", padx=(0, 4))
         self._history_sort_key = "date"
         self._history_sort_reverse = True
-        sort_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
-        sort_row.pack(fill="x", padx=20, pady=(0, 4))
-        ctk.CTkLabel(sort_row, text="Sort by:", font=UITheme.F(11), text_color="#95a5a6").pack(side="left")
         for lbl, key in [("Date", "date"), ("Title", "title"), ("Status", "status")]:
             btn = ctk.CTkButton(
-                sort_row, text=lbl, width=60, height=UITheme.H_XS,
+                search_row, text=lbl, width=60, height=UITheme.H_XS,
                 font=UITheme.F(10),
                 command=lambda k=key: self._set_history_sort(k),
             )
@@ -146,13 +146,13 @@ class HistoryPageMixin:
             # a surface card, so the well is the window background color: that
             # contrast is also what makes its rounded corners visible.
             fg_color=_pal.get("bg", UITheme.SURFACE_BG),
-            border_color=_pal.get("hover", UITheme.SIDEBAR_HOVER),
+            border_color=UITheme.BORDER_SOFT,
             label_fg_color=_pal.get("hover", UITheme.SIDEBAR_HOVER),
             label_text_color=_pal.get("text", "#ecf0f1"),
         )
         setattr(self.history_scroll, "_theme_roles",
-                {"fg_color": "bg", "border_color": "hover",
-                 "label_fg_color": "hover", "label_text_color": "text"})
+                {"fg_color": "bg", "label_fg_color": "hover",
+                 "label_text_color": "text"})
         self.history_scroll.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         # Internal container for entry widgets (rebuilt on refresh)
