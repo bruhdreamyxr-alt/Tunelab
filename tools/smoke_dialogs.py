@@ -174,20 +174,22 @@ check("long message keeps its headline only",
 check("title is shown", any(t == "Download Failed" for t in labels))
 check("detail block is truncated on screen",
       any("more lines" in t for t in labels))
-found = (find_button(dlg, "OK") + find_button(dlg, "Copy details") +
+found = (find_button(dlg, "OK") + find_button(dlg, "Copy error text") +
          find_button(dlg, "Try again"))
 btns = [str(b.cget("text")) for b in found]
-check("OK / Copy details / Try again all rendered",
-      btns == ["OK", "Copy details", "Try again"], str(btns))
+check("OK / Copy error text / Try again all rendered",
+      btns == ["OK", "Copy error text", "Try again"], str(btns))
 
-find_button(dlg, "Copy details")[0].invoke()
+find_button(dlg, "Copy error text")[0].invoke()
 pump(root, 80)
 clip = dlg.clipboard_get()
-check("Copy details copies everything, preview cap and traceback included",
+check("Copy error text copies everything, preview cap and traceback included",
       "log line 11" in clip and "HTTP Error 403" in clip
       and "more lines" not in clip, f"{len(clip)} chars")
 check("caller detail stays in front of the folded traceback",
       clip.index("log line 0") < clip.index("Traceback (most recent"))
+check("copy includes the headline message too",
+      "Download failed." in clip)
 
 find_button(dlg, "Try again")[0].invoke()
 pump(root, 150)
@@ -196,9 +198,9 @@ check("Try again closes the dialog and fires its callback",
 
 dlg2 = root._show_info_dialog("Performance", "Simple one-liner.")
 pump(root, 350)
-check("info dialog renders without a detail block",
+check("info dialog renders without a copy button or detail block",
       dlg2.winfo_exists() and
-      not any("Copy details" in t for t in texts(dlg2)))
+      not any(t.startswith("Copy") for t in texts(dlg2)))
 dlg2.event_generate("<Escape>")
 pump(root, 150)
 check("Escape closes the dialog", not dlg2.winfo_exists())
@@ -207,7 +209,21 @@ dlg3 = root._show_error_dialog("Bare", "")
 pump(root, 300)
 check("empty message still produces a readable dialog",
       dlg3.winfo_exists() and bool(texts(dlg3)))
+check("detail-less error dialog still offers Copy error text",
+      bool(find_button(dlg3, "Copy error text")))
 dlg3.destroy()
+pump(root, 100)
+
+dlg4 = root._show_error_dialog(
+    "Worker Failure", "Could not convert the file.",
+    detail="Traceback (most recent call last):\n  ...\nAepError: nope")
+pump(root, 300)
+find_button(dlg4, "Copy error text")[0].invoke()
+pump(root, 80)
+clip4 = dlg4.clipboard_get()
+check("error copy includes headline and traceback detail",
+      "Could not convert the file." in clip4 and "AepError: nope" in clip4)
+dlg4.destroy()
 pump(root, 100)
 
 root.destroy()

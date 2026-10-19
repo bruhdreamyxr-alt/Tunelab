@@ -947,12 +947,17 @@ class UiSplitsMixin:
 
     def _aep_convert_worker(self, year):
         """Run the relabel off-thread; all widget touches via after(0, ...)."""
+        import traceback
+
         import aep_convert  # local module
         src = self.aep_src_path
         try:
             result = aep_convert.convert(src, year)
         except Exception as exc:
-            self.after(0, lambda err=exc: self._aep_convert_failed(str(err)))
+            # Keep the full traceback: the one-line str(exc) is what the old
+            # system box showed, and it is never enough to debug a bad file.
+            err, tb = str(exc), traceback.format_exc()
+            self.after(0, lambda e=err, t=tb: self._aep_convert_failed(e, t))
             return
         try:
             self.aep_progress.set(0.9)
@@ -983,7 +988,8 @@ class UiSplitsMixin:
             "Your file now opens in AE %d.\nSaved as:\n%s"
             % (result["year"], result["out_path"]))
 
-    def _aep_convert_failed(self, message):
+    def _aep_convert_failed(self, message, detail=None):
+        """Restore the UI, then show the failure with a copyable traceback."""
         self.aep_busy = False
         try:
             self.aep_convert_btn.configure(state="normal",
@@ -991,4 +997,4 @@ class UiSplitsMixin:
             self.aep_progress.set(0.0)
         except Exception:
             pass
-        self._show_error_dialog("Conversion Failed", message)
+        self._show_error_dialog("Conversion Failed", message, detail=detail)

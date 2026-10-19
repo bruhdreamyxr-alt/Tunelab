@@ -1351,8 +1351,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         The system boxes are gray OS chrome: they ignore the active palette,
         squeeze a multi-line yt-dlp failure into one clipped line, and give no
         way to copy the error text. This dialog uses the current theme, wraps
-        the message, shows technical detail in a separate muted block with a
-        Copy button, and can offer one secondary action (e.g. Try again).
+        the message, shows technical detail in a separate muted block, and can
+        offer one secondary action (e.g. Try again). Every error dialog also
+        gets a copy button - "Copy error text" - even when the call site
+        passed the whole failure as the message with no detail block, because
+        "paste the error into a bug report" is the first thing debugging asks
+        for. Other kinds only show "Copy details" when there is technical
+        detail to copy.
 
         Same ``(title, message)`` shape as messagebox so call sites stay
         readable. Returns the Toplevel (mostly for tests); nothing blocks.
@@ -1394,14 +1399,18 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                      justify="left").pack(anchor="w")
 
         detail = "" if detail is None else str(detail).strip()
+        # Full copyable text: the headline plus the uncapped technical detail,
+        # never the on-screen preview. Error dialogs offer it even when the
+        # call site passed everything as the message (no detail block).
+        copy_text = "\n\n".join(p for p in (message, detail) if p)
         if detail:
             lines = detail.splitlines()
             # Cap what is displayed: a 40-line yt-dlp traceback would otherwise
-            # push the buttons off the screen. "Copy details" always copies the
-            # complete text, never the truncated preview.
+            # push the buttons off the screen. The Copy button always copies
+            # the complete text, never the truncated preview.
             if len(lines) > 8:
                 shown = "\n".join(lines[:8]) + \
-                    f"\n… plus {len(lines) - 8} more lines — use Copy details"
+                    f"\n… plus {len(lines) - 8} more lines — use Copy to get all"
             else:
                 shown = detail
             box = ctk.CTkFrame(body, fg_color=field_bg,
@@ -1434,15 +1443,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                       font=UITheme.F(12, "bold"),
                       command=_close).pack(side="right")
 
-        if detail:
+        if copy_text and (detail or kind == "error"):
             def _copy():
                 try:
                     dlg.clipboard_clear()
-                    dlg.clipboard_append(detail)
+                    dlg.clipboard_append(copy_text)
                 except Exception:
-                    logger.exception("Could not copy dialog detail")
+                    logger.exception("Could not copy dialog text")
 
-            ctk.CTkButton(row, text="Copy details", width=112, height=UITheme.H_LG,
+            copy_label = ("Copy error text" if kind == "error"
+                          else "Copy details")
+            ctk.CTkButton(row, text=copy_label, width=130, height=UITheme.H_LG,
                           corner_radius=UITheme.RADIUS_MD,
                           fg_color="transparent", border_width=UITheme.BORDER_W,
                           border_color=pal.get("hover", sub), text_color=sub,

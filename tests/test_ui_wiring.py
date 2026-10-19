@@ -832,9 +832,21 @@ class ThemedDialogTests(unittest.TestCase):
     def test_technical_detail_is_capped_on_screen_but_not_when_copied(self):
         body = _method_source("_show_dialog")
         self.assertIn("Copy details", body)
-        self.assertIn("clipboard_append(detail)", body)   # full text, not preview
+        self.assertIn("clipboard_append(copy_text)", body)  # full text, not preview
         self.assertIn("len(lines) > 8", body)             # preview is capped
         self.assertIn('if detail:', body)                 # block only when needed
+        # copy_text joins the headline with the uncapped detail, so the copy
+        # is never the truncated on-screen preview.
+        self.assertIn('copy_text = "\\n\\n".join(p for p in (message, detail) if p)',
+                      body)
+
+    def test_error_dialogs_always_offer_a_copy_button(self):
+        # A failure passed as a plain message (no detail=, e.g. the AE
+        # conversion worker's str(exc)) must still be copyable for bug
+        # reports; info/warning dialogs keep the detail-only behaviour.
+        body = _method_source("_show_dialog")
+        self.assertIn('if copy_text and (detail or kind == "error"):', body)
+        self.assertIn('"Copy error text" if kind == "error"', body)
 
     def test_the_dialog_runs_its_text_through_the_splitter(self):
         # Headline tidying lives in ui._split_headline (unit-tested on its own);
@@ -850,7 +862,7 @@ class ThemedDialogTests(unittest.TestCase):
         # Every button packs side="right", which lays out right-to-left: the
         # later a button is packed, the further left it lands.
         ok = body.index('text="OK"')
-        copy = body.index('text="Copy details"')
+        copy = body.index("text=copy_label")
         action = body.index("if action_label and action_cb:")
         self.assertLess(ok, copy)
         self.assertLess(copy, action)
