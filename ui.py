@@ -901,8 +901,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Row 1: a mode toggle plus one primary Download button, instead of
         # two separate fills competing for attention.
+        # fill="x" so the row spans the window width and its buttons are never
+        # pushed past the right edge on narrow windows.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        action_row.pack(pady=(0, UITheme.RHYTHM))
+        action_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
 
         self.dl_mode_var = ctk.StringVar(value="audio")
         self.dl_mode_toggle = ctk.CTkSegmentedButton(
@@ -931,7 +933,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        preview_frame.pack(pady=(0, UITheme.RHYTHM))
+        preview_frame.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
 
         self.btn_preview_audio = ctk.CTkButton(
             preview_frame,
@@ -1062,7 +1064,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Row: save folder + audio quality side by side (was two stacked rows).
         settings_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        settings_row.pack(pady=(0, UITheme.RHYTHM))
+        settings_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
         self.btn_choose_folder = ctk.CTkButton(
             settings_row,
             text="Change Save Folder",
@@ -1123,7 +1125,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # --- Queue + Tag Editor controls ---
         controls_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        controls_row.pack(pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
+        controls_row.pack(fill="x", padx=UITheme.PAD_X, pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
 
         self.btn_add_to_queue = ctk.CTkButton(
             controls_row, text="➕ Add to Queue", width=130, height=UITheme.H_SM,
