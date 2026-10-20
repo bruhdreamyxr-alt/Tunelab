@@ -909,7 +909,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.dl_mode_var = ctk.StringVar(value="audio")
         self.dl_mode_toggle = ctk.CTkSegmentedButton(
             action_row, values=["Audio", "Video"],
-            variable=self.dl_mode_var, width=150, height=UITheme.H_LG,
+            variable=self.dl_mode_var, width=100, height=UITheme.H_LG,
         )
         self.dl_mode_toggle.pack(side="left")
         self._style_option_menu(self.dl_mode_toggle)
@@ -932,8 +932,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                                lambda e: self._restore_hover_detail())
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
+        # Starts hidden - previews only make sense once a URL is pasted, so the
+        # row stays out of sight until then instead of claiming permanent space.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         preview_frame.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        preview_frame.pack_forget()
+        self._preview_frame = preview_frame
 
         self.btn_preview_audio = ctk.CTkButton(
             preview_frame,
@@ -1227,6 +1231,25 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self.btn_clear_url.place(relx=1.0, rely=0.5, anchor="e", x=-6)
             else:
                 self.btn_clear_url.place_forget()
+        except Exception:
+            pass
+        self._toggle_preview_visibility()
+
+    def _toggle_preview_visibility(self):
+        """Show the preview row only when the URL box has text.
+
+        Previews need a URL to work, so the row stays hidden on a fresh
+        launch instead of claiming permanent screen space. Shown the moment
+        the user pastes or types something, hidden again when the box is
+        cleared.
+        """
+        try:
+            has_text = bool(self.url_entry.get().strip())
+            if has_text and not self._preview_frame.winfo_manager():
+                self._preview_frame.pack(fill="x", padx=UITheme.PAD_X,
+                                         pady=(0, UITheme.RHYTHM))
+            elif not has_text and self._preview_frame.winfo_manager():
+                self._preview_frame.pack_forget()
         except Exception:
             pass
 
