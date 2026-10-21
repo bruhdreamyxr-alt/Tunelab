@@ -542,6 +542,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # it lands (its after() was already serviced by the event loop).
         self._history_read_gen: int = 0
         self._history_read_pending: bool = False
+        # Set when a refresh is requested while a read is already in
+        # flight. The in-flight worker chains a fresh read when it lands,
+        # so the newest request is never dropped (which left the page
+        # stale after hopping away and back mid-read).
+        self._history_read_again: bool = False
+        self._history_read_again_force: bool = False
         # Last URL/mode started, so a failed download's dialog can offer
         # "Try again" without the user re-pasting the link.
         self._last_dl_url: str = ""

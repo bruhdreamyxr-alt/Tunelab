@@ -20,6 +20,8 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -2972,6 +2974,51 @@ def _new_app():
     return app
 
 
+def _pump_until_history_idle(app, timeout: float = 10.0,
+                             since_gen: int | None = None,
+                             require_new_read: bool = True) -> bool:
+    """Pump the event loop until a history read has started and settled.
+
+    The deferred history refresh is asynchronous: a 15ms timer fires
+    _refresh_history_async, which reads the history file on a worker
+    thread and renders the result back on the main thread. Both hops
+    cross a thread boundary, so a fixed number of update() calls is a
+    guess about how fast the machine is - on a loaded CI runner the
+    worker had not landed yet and the test counted zero rebuilds.
+
+    Waiting only for "nothing pending" is not enough either: before the
+    timer fires, nothing is pending, so the pump would return at once
+    and the test would count zero rebuilds. The generation counter
+    (_history_read_gen) is bumped by every _refresh_history_async call,
+    so it tells us the timer really fired.
+
+    since_gen: only settle once the generation has moved past this
+    value. Defaults to the current generation, i.e. "wait for the next
+    read to start and finish". Pass require_new_read=False to just
+    wait for any in-flight read to settle, without requiring a new one
+    to have started.
+
+    Returns False on timeout so the caller can fail with a useful
+    message rather than hang.
+    """
+    if since_gen is None:
+        since_gen = getattr(app, "_history_read_gen", 0)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            app.update()
+        except Exception:
+            return False
+        gen = getattr(app, "_history_read_gen", 0)
+        pending = getattr(app, "_history_read_pending", False)
+        again = getattr(app, "_history_read_again", False)
+        started = gen > since_gen if require_new_read else True
+        if started and not pending and not again:
+            return True
+        time.sleep(0.005)
+    return False
+
+
 class ScrollbarVisibilityTests(unittest.TestCase):
     """Scrollbars are invisible until the pointer reaches them."""
 
@@ -3363,15 +3410,81 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
             app.show_frame("history")
             app.show_frame("downloader")
             app.show_frame("history")
-            app.update()  # pump the loop: the deferred refresh fires here
-            app.update_idletasks()
-            app.after(50)  # let the short timer elapse
-            app.update()
+            # The rebuild is asynchronous (worker read + main-thread
+            # render), so wait for it to actually land rather than
+            # guessing with a fixed number of update() calls.
+            idle = _pump_until_history_idle(app)
         finally:
             cls._refresh_history_view = orig
+        self.assertTrue(idle, "history refresh never settled")
         self.assertEqual(len(fired), 1,
                          "rapid tab hops should coalesce to a single "
                          "deferred history rebuild")
+
+    def test_refresh_requested_during_an_in_flight_read_is_not_dropped(self):
+        """A refresh asked for mid-read must still happen.
+
+        The tab switch reads history on a worker thread. If the user
+        hops away and back while that read is in flight, the second
+        request used to be dropped: the worker saw itself as superseded
+        and discarded its payload, and the new request had already
+        returned - so nothing rendered at all and the page kept whatever
+        stale view it had.
+
+        The in-flight worker must chain a fresh read instead. The race is
+        reproduced deterministically here by blocking the real worker
+        read so the second request provably lands mid-read.
+        """
+        app = type(self).app
+        app.show_frame("history")
+        app.update()
+        self.assertTrue(
+            _pump_until_history_idle(app, require_new_read=False),
+            "history read never settled to start with")
+
+        cls = type(app)
+        started = threading.Event()
+        release = threading.Event()
+        orig_entries = cls._history_entries
+        reads = []
+
+        def _blocking_entries(self_):
+            # First read blocks until the test releases it; the read
+            # queued during the block goes through untouched.
+            reads.append(1)
+            if len(reads) == 1:
+                started.set()
+                release.wait(10.0)
+            return orig_entries(self_)
+
+        orig_view = cls._refresh_history_view
+        renders = []
+        cls._history_entries = _blocking_entries
+        cls._refresh_history_view = lambda self_, *a, **k: (
+            renders.append(1), orig_view(self_, *a, **k))[1]
+        try:
+            app._refresh_history_async()
+            self.assertTrue(
+                started.wait(10.0), "the worker read never started")
+            # The read is in flight: this request must be recorded, not
+            # dropped.
+            app._refresh_history_async()
+            self.assertTrue(
+                getattr(app, "_history_read_again", False),
+                "a refresh requested during an in-flight read was dropped")
+            release.set()
+            self.assertTrue(_pump_until_history_idle(app),
+                            "the chained read never settled")
+        finally:
+            release.set()
+            cls._history_entries = orig_entries
+            cls._refresh_history_view = orig_view
+        self.assertGreaterEqual(
+            len(reads), 2,
+            "the follow-up read should have been started, not dropped")
+        self.assertGreaterEqual(
+            len(renders), 1,
+            "the history view should have been rebuilt")
 
     def test_the_toggle_offers_both_views_and_list_is_the_default(self):
         app = type(self).app

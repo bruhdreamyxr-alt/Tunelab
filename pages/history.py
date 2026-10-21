@@ -406,7 +406,15 @@ class HistoryPageMixin:
             self._history_read_gen = 1
         gen = self._history_read_gen
         if getattr(self, "_history_read_pending", False):
+            # A read is already in flight. Bumping the generation above has
+            # just invalidated its payload, so this request cannot simply be
+            # dropped: remember it and let the in-flight worker chain a
+            # fresh read when it lands. Dropping it (the old behaviour) left
+            # the page stale - hopping away and back while a read was in
+            # flight rendered nothing at all.
+            self._history_read_again = True
             if force:
+                self._history_read_again_force = True
                 try:
                     self.after(
                         0,
@@ -415,6 +423,8 @@ class HistoryPageMixin:
                     pass
             return
         self._history_read_pending = True
+        self._history_read_again = False
+        self._history_read_again_force = False
 
         def _read():
             try:
@@ -433,17 +443,37 @@ class HistoryPageMixin:
 
             def _apply():
                 self._history_read_pending = False
-                if gen != getattr(self, "_history_read_gen", gen):
-                    return
-                try:
-                    self._refresh_history_view(
-                        force=True, _entries=entries, _missing=missing)
-                except Exception:
-                    logger.debug("Async history render failed", exc_info=True)
+                stale = gen != getattr(self, "_history_read_gen", gen)
+                if not stale:
+                    try:
+                        self._refresh_history_view(
+                            force=True, _entries=entries, _missing=missing)
+                    except Exception:
+                        logger.debug("Async history render failed",
+                                     exc_info=True)
+                # A request may have arrived while this read was in flight.
+                # It was recorded rather than dropped, so chain a fresh
+                # read now - otherwise the page keeps whatever it last
+                # managed to render (the old behaviour: nothing at all
+                # after hopping away and back mid-read).
+                if getattr(self, "_history_read_again", False):
+                    self._history_read_again = False
+                    again_force = getattr(
+                        self, "_history_read_again_force", False)
+                    self._history_read_again_force = False
+                    self._refresh_history_async(force=again_force)
             try:
                 self.after(0, _apply)
             except Exception:
+                # _apply will never run, so the queued request would be
+                # lost with it: do the chain here instead.
                 self._history_read_pending = False
+                if getattr(self, "_history_read_again", False):
+                    self._history_read_again = False
+                    again_force = getattr(
+                        self, "_history_read_again_force", False)
+                    self._history_read_again_force = False
+                    self._refresh_history_async(force=again_force)
 
         try:
             import threading as _th
@@ -454,6 +484,13 @@ class HistoryPageMixin:
                 self._refresh_history_view(force=force)
             except Exception:
                 logger.debug("Sync history fallback failed", exc_info=True)
+            # A request that arrived while the thread was starting is
+            # still queued: the sync fallback above is not its answer.
+            if getattr(self, "_history_read_again", False):
+                self._history_read_again = False
+                again_force = getattr(self, "_history_read_again_force", False)
+                self._history_read_again_force = False
+                self._refresh_history_async(force=again_force)
 
 
     def _add_history_entry(self, idx, entry):
