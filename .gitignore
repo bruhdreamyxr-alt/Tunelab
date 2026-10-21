@@ -59,3 +59,109 @@ download_history.json
 download_queue.json
 ui_prefs.json
 .legacy_data_migrated
+
+# ---------------------------------------------------------------
+# Unrelated Ren'Py reverse-engineering scratch
+# ---------------------------------------------------------------
+# These scripts and dumps belong to a different project entirely -
+# they were dropped in this checkout by mistake and nothing in the
+# app references them. They are ignored rather than deleted so a
+# stray copy cannot silently reappear in `git status`.
+#
+# Every entry below is an exact filename, never a wildcard. A broad
+# pattern like `out*.txt` would silently hide a future legitimate
+# report such as `outgoing_requests.txt`, and would hide it forever
+# because an ignored file is invisible to `git status`. The lists
+# below are the exact names that were actually observed in this
+# checkout.
+#
+# The extractor/dumper scripts.
+rpa_decompress_index.py
+rpa_extract.py
+rpa_extract_index.py
+rpa_extract_scripts_index.py
+rpa_header.py
+rpa_inspect_scripts_entry.py
+rpa_peek.py
+rpa_peek2.py
+rpa_search_sceneentry.py
+rpa_search_text.py
+extract_at_pos.py
+extract_gallery_full.py
+extract_gallery_screen.py
+extract_rpa.py
+extract_scenes.py
+extract_unlocked.py
+read_gallery.py
+read_gallery_lines.py
+read_lines2.py
+read_persist_015.py
+read_persistent.py
+read_rpa_index.py
+read_save_json.py
+inspect_current_pickle.py
+inspect_header.py
+inspect_persist_sig.py
+inspect_persistent.py
+inspect_save_zip.py
+inspect_zlib.py
+list_rpa.py
+parse_scene_entries.py
+renpy_pickle.py
+unlock_all_gallery.py
+seen_images_count.py
+find_gallery_keys.py
+find_session_unlock.py
+find_uuid.py
+check_def_unlocked.py
+check_save_format.py
+check_save_log.py
+compute_digests.py
+bytecode_info.py
+dump_gallery_ctx.py
+explore_persist.py
+explore_save_tuple.py
+verify_sig.py
+
+# Their extracted data and dumped output.
+extracted/
+bytecode_decompressed.bin
+code_ctx.txt
+es.txt
+fn.txt
+gsd.txt
+out.txt
+out2.txt
+out3.txt
+out4.txt
+out5.txt
+out6.txt
+out7.txt
+out8.txt
+out9.txt
+out10.txt
+out11.txt
+rpa_index.txt
+rpa_output.txt
+run_idx.txt
+scene_entries.json
+sceneentry.txt
+scripts_files.txt
+se2.txt
+se3.txt
+try_renpy.txt
+uag.txt
+uuid_ctx.txt
+persistent_dump.json
+gallery_ctx.txt
+gallery_screen_context.txt
+gallery_screen_full.txt
+unlocked_context.txt
+
+# ---------------------------------------------------------------
+# Model weights fetched at runtime by the downloader
+# ---------------------------------------------------------------
+# flownet.bin is a large binary that used to be committed to the
+# repository and was later removed. It is fetched on demand, so
+# re-ignoring it keeps it from creeping back into a commit.
+flownet.bin
