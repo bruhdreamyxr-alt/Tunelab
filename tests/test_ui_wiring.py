@@ -2988,28 +2988,30 @@ def _pump_until_history_idle(app, timeout: float = 10.0,
 
     Waiting only for "nothing pending" is not enough either: before the
     timer fires, nothing is pending, so the pump would return at once
-    and the test would count zero rebuilds. The generation counter
-    (_history_read_gen) is bumped by every _refresh_history_async call,
-    so it tells us the timer really fired.
+    and the test would count zero rebuilds. The epoch counter
+    (_history_read_epoch) is bumped only when a read ACTUALLY starts, so
+    it tells us the timer really fired. The generation counter
+    (_history_read_gen) is not used for this: it also moves when a stale
+    read is invalidated, which would look like a read that never ran.
 
-    since_gen: only settle once the generation has moved past this
-    value. Defaults to the current generation, i.e. "wait for the next
-    read to start and finish". Pass require_new_read=False to just
-    wait for any in-flight read to settle, without requiring a new one
-    to have started.
+    since_gen: only settle once the epoch has moved past this value.
+    Defaults to the current epoch, i.e. "wait for the next read to start
+    and finish". Pass require_new_read=False to just wait for any
+    in-flight read to settle, without requiring a new one to have
+    started.
 
     Returns False on timeout so the caller can fail with a useful
     message rather than hang.
     """
     if since_gen is None:
-        since_gen = getattr(app, "_history_read_gen", 0)
+        since_gen = getattr(app, "_history_read_epoch", 0)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             app.update()
         except Exception:
             return False
-        gen = getattr(app, "_history_read_gen", 0)
+        gen = getattr(app, "_history_read_epoch", 0)
         pending = getattr(app, "_history_read_pending", False)
         again = getattr(app, "_history_read_again", False)
         started = gen > since_gen if require_new_read else True
@@ -3485,6 +3487,90 @@ class HistoryGalleryWidgetTests(unittest.TestCase):
         self.assertGreaterEqual(
             len(renders), 1,
             "the history view should have been rebuilt")
+
+    def test_a_read_in_flight_when_the_hop_starts_does_not_render_twice(self):
+        """A read from BEFORE the tab hop must not add a second rebuild.
+
+        The deferred refresh coalesces rapid hops into one rebuild, but a
+        worker read that was already in flight when the hop happened
+        used to land afterwards and render a second time - two rebuilds
+        where the user expects one. The hop invalidates that stale read;
+        the timer then does the single rebuild.
+        """
+        app = type(self).app
+        app.show_frame("history")
+        app.update()
+        self.assertTrue(
+            _pump_until_history_idle(app, require_new_read=False),
+            "history read never settled to start with")
+        # Drop any deferred timer still queued by the visit above: the
+        # blocking read below must be the one this test starts.
+        pending_timer = getattr(app, "_history_refresh_after", None)
+        if pending_timer:
+            try:
+                app.after_cancel(pending_timer)
+            except Exception:
+                pass
+            app._history_refresh_after = None
+
+        cls = type(app)
+        started = threading.Event()
+        release = threading.Event()
+        orig_entries = cls._history_entries
+        orig_view = cls._refresh_history_view
+        reads = []
+        renders = []
+
+        def _blocking_entries(self_):
+            reads.append(1)
+            if len(reads) == 1:
+                started.set()
+                release.wait(10.0)
+            return orig_entries(self_)
+
+        cls._history_entries = _blocking_entries
+        cls._refresh_history_view = lambda self_, *a, **k: (
+            renders.append(1), orig_view(self_, *a, **k))[1]
+        try:
+            # A read is now in flight on the worker thread.
+            app._refresh_history_async()
+            self.assertTrue(
+                started.wait(10.0), "the worker read never started")
+            # The user hops back to the history tab. The in-flight read
+            # belongs to the previous visit: it must NOT render, or the
+            # deferred refresh renders on top of it and the page is
+            # rebuilt twice.
+            app.show_frame("history")
+            # Cancel the deferred timer so the stale read is the only
+            # thing that can land: without the invalidation it would
+            # render here (and the timer would add a second rebuild).
+            timer = getattr(app, "_history_refresh_after", None)
+            if timer:
+                try:
+                    app.after_cancel(timer)
+                except Exception:
+                    pass
+                app._history_refresh_after = None
+            release.set()
+            self.assertTrue(
+                _pump_until_history_idle(app, require_new_read=False),
+                "the stale read never settled")
+            self.assertEqual(
+                len(renders), 0,
+                "the stale pre-hop read rendered; the page would be "
+                "rebuilt twice")
+            # The deferred refresh still rebuilds the page - exactly once.
+            app._schedule_history_refresh()
+            self.assertTrue(
+                _pump_until_history_idle(app),
+                "the deferred read never settled")
+        finally:
+            release.set()
+            cls._history_entries = orig_entries
+            cls._refresh_history_view = orig_view
+        self.assertEqual(
+            len(renders), 1,
+            "the deferred refresh should rebuild the page exactly once")
 
     def test_the_toggle_offers_both_views_and_list_is_the_default(self):
         app = type(self).app

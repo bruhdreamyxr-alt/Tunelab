@@ -425,6 +425,14 @@ class HistoryPageMixin:
         self._history_read_pending = True
         self._history_read_again = False
         self._history_read_again_force = False
+        # A read really starts here (not just an invalidation), so the
+        # epoch moves. Waiters that want to know "did a new read begin?"
+        # watch this counter, not the generation.
+        try:
+            self._history_read_epoch = int(
+                getattr(self, "_history_read_epoch", 0)) + 1
+        except Exception:
+            self._history_read_epoch = 1
 
         def _read():
             try:

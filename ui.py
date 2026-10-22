@@ -541,6 +541,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # starts a new read, and the old worker's result is discarded when
         # it lands (its after() was already serviced by the event loop).
         self._history_read_gen: int = 0
+        # Bumped only when a read ACTUALLY starts (not when a stale one is
+        # invalidated). The generation counter moves in both cases, so a
+        # waiter that wants to know "did a new read begin?" has to look at
+        # this one instead - an invalidation must not look like a read.
+        self._history_read_epoch: int = 0
         self._history_read_pending: bool = False
         # Set when a refresh is requested while a read is already in
         # flight. The in-flight worker chains a fresh read when it lands,
@@ -2932,6 +2937,21 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self.after_cancel(pending)
         except Exception:
             pass
+        # A read from an earlier visit may still be in flight. Its payload
+        # would land after this visit's rebuild and render a second time -
+        # two rebuilds where the user (and the coalescing test) expects
+        # one. Invalidate it here: the timer below starts a fresh read that
+        # renders exactly once. (The stale worker still clears the
+        # in-flight flag and chains if it was asked to, so no request is
+        # dropped.)
+        try:
+            self._history_read_gen = int(
+                getattr(self, "_history_read_gen", 0)) + 1
+        except Exception:
+            try:
+                self._history_read_gen = 1
+            except Exception:
+                pass
         try:
             self._history_refresh_after = self.after(
                 15, self._refresh_history_async)
