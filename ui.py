@@ -4801,18 +4801,18 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     new_val = pal.get(role)
                     if not new_val:
                         continue
-                    try:
-                        cur = w.cget(opt)
-                    except Exception:
-                        continue
-                    if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
-                        continue
-                    if str(new_val).lower() == cur.lower():
+                    last = getattr(w, "_theme_last", None)
+                    if isinstance(last, dict) and last.get(opt) == new_val:
                         continue
                     try:
                         w.configure(**{opt: new_val})
                     except Exception:
                         pass
+                    else:
+                        if not isinstance(last, dict):
+                            last = {}
+                            setattr(w, "_theme_last", last)
+                        last[opt] = new_val
         else:
             roles_seen = ('fg_color', 'hover_color', 'border_color',
                           'text_color', 'progress_color', 'button_color',
