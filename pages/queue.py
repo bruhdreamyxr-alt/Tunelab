@@ -188,7 +188,7 @@ class QueuePageMixin:
                              fill="both", expand=True)
 
         self.queue_status = ctk.CTkLabel(self.tab_queue, text="Idle", font=UITheme.F(11),
-                                         text_color="#95a5a6")
+                                         text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self.queue_status.pack(pady=(6, 0))
 
         self.tab_queue.place(relx=0, rely=0, relwidth=1, relheight=1)

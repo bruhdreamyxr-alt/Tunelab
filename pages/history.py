@@ -9,7 +9,11 @@ from tkinter import messagebox
 from typing import Any, Optional
 
 import customtkinter as ctk
-from ui_theme import UITheme
+from ui_theme import UITheme, STATUS_ROLE, status_color, _on_color
+try:
+    from ui_components import EmptyState
+except Exception:  # pragma: no cover
+    EmptyState = None
 import downloader
 
 
@@ -44,6 +48,15 @@ class HistoryPageMixin:
         with re-download buttons and a clear-history control."""
         # Page title lives in the header only — no in-page H1.
 
+        # Palette snapshot once at the top so every widget below resolves its
+        # colors from the active palette instead of a per-call getattr.
+        _pal = getattr(self, "_palette", {}) or {}
+        # A secondary tone that reads on every palette: pick the better of the
+        # body text colour and the muted `sub` colour against the card surface.
+        _card = _pal.get("surface", UITheme.SURFACE_BG)
+        _sec = _on_color(_card, _pal.get("text", "#ecf0f1"),
+                         _pal.get("sub", UITheme.COLOR_GRAY))
+
         # Top controls: Clear History button + count label
         ctrl_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
         ctrl_row.pack(fill="x", padx=UITheme.PAD_X, pady=(14, 6))
@@ -59,7 +72,10 @@ class HistoryPageMixin:
         # red actions (Stop, Cancel) keep the full danger fill.
         self._style_button(self.btn_clear_history, "ghost", bordered=True, icon="trash")
 
-        self.history_count_lbl = ctk.CTkLabel(ctrl_row, text="0 entries", font=UITheme.F(12), text_color="#95a5a6")
+        self.history_count_lbl = ctk.CTkLabel(
+            ctrl_row, text="0 entries", font=UITheme.F(12),
+            text_color=_sec,
+        )
         self.history_count_lbl.pack(side="left", padx=(12, 0))
 
         # Offered only when something is actually prunable, so the row does not
@@ -112,7 +128,7 @@ class HistoryPageMixin:
         # unlabelled box gives the user nothing to go on.
         ctk.CTkLabel(
             search_row, text="Search", font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            text_color=_sec,
         ).pack(side="left", padx=(0, 8))
         self.history_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 12))
         # Debounced: a rebuild destroys and recreates every row widget, so
@@ -123,7 +139,7 @@ class HistoryPageMixin:
 
         # Sort filters on the same row.
         ctk.CTkLabel(search_row, text="Sort by:", font=UITheme.F(11),
-                     text_color="#95a5a6").pack(side="left", padx=(0, 4))
+                     text_color=_sec).pack(side="left", padx=(0, 4))
         self._history_sort_key = "date"
         self._history_sort_reverse = True
         for lbl, key in [("Date", "date"), ("Title", "title"), ("Status", "status")]:
@@ -137,6 +153,9 @@ class HistoryPageMixin:
 
         # Scrollable list of history entries
         _pal = getattr(self, "_palette", {}) or {}
+        _card = _pal.get("surface", UITheme.SURFACE_BG)
+        _sec = _on_color(_card, _pal.get("text", "#ecf0f1"),
+                         _pal.get("sub", UITheme.COLOR_GRAY))
         self.history_scroll = ctk.CTkScrollableFrame(
             self.tab_history, label_text="Past Downloads",
             corner_radius=UITheme.RADIUS_LG,
@@ -358,7 +377,8 @@ class HistoryPageMixin:
             ctk.CTkLabel(
                 self._history_entries_frame,
                 text=msg,
-                font=UITheme.F(12), text_color="#95a5a6",
+                font=UITheme.F(12),
+                text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
             ).pack(pady=30)
             return
 
@@ -509,8 +529,10 @@ class HistoryPageMixin:
         filepath = entry.get("filepath", "")
         completed = entry.get("completed_at")
         is_video = entry.get("is_video", False)
-
-        # Format timestamp
+        _pal = getattr(self, "_palette", {}) or {}
+        _card = _pal.get("surface", UITheme.SURFACE_BG)
+        _sec = _on_color(_card, _pal.get("text", "#ecf0f1"),
+                         _pal.get("sub", UITheme.COLOR_GRAY))
         date_str = "Unknown"
         if completed:
             try:
@@ -519,12 +541,10 @@ class HistoryPageMixin:
             except Exception:
                 date_str = "Unknown"
 
-        # Status styling
-        status_colors = {
-            "done": "#2ecc71", "failed": "#e74c3c",
-            "skipped": "#f39c12", "pending": "#3498db",
-        }
-        status_color = status_colors.get(status, "#95a5a6")
+        # Status styling: palette-driven, not per-preset hex. The role tag on
+        # the label below lets a later theme switch repaint it in lock step.
+        _status_pal = getattr(self, "_palette", {}) or {}
+        status_clr = status_color(_status_pal, status)
 
         # File existence check
         file_exists = bool(filepath and os.path.exists(filepath))
@@ -541,8 +561,15 @@ class HistoryPageMixin:
         right.pack(side="right", fill="y", padx=(6, 0))
 
         status_lbl = ctk.CTkLabel(right, text=status.upper(), font=UITheme.F(10, "bold"),
-                                  text_color=status_color, width=70)
+                                  text_color=status_clr, width=70)
         status_lbl.pack(side="left", padx=(0, 6))
+        # Re-paint the badge across theme switches: its colour is a status role,
+        # not a fixed hex, so without a tag it would freeze at the build palette.
+        try:
+            setattr(status_lbl, "_theme_roles",
+                    {"text_color": STATUS_ROLE.get(str(status).lower(), "sub")})
+        except Exception:
+            pass
 
         # Re-download button
         btn_redl = ctk.CTkButton(
@@ -580,35 +607,8 @@ class HistoryPageMixin:
         meta_parts.append(f"File: {'✓ exists' if file_exists else '✗ missing'}")
         meta_text = "  |  ".join(meta_parts)
         meta_lbl = ctk.CTkLabel(left, text=meta_text, font=UITheme.F(10),
-                                text_color="#7f8c8d", anchor="w")
+                                 text_color=_sec, anchor="w")
         meta_lbl.pack(anchor="w")
-
-        status_lbl = ctk.CTkLabel(right, text=status.upper(), font=UITheme.F(10, "bold"),
-                                  text_color=status_color, width=70)
-        status_lbl.pack(side="left", padx=(0, 6))
-
-        # Re-download button
-        btn_redl = ctk.CTkButton(
-            right, text="", width=34, height=UITheme.H_SM,
-            command=lambda u=url, v=is_video: self._redownload(u, v),
-        )
-        self._style_button(btn_redl, "primary", icon="refresh")
-        btn_redl.pack(side="left", padx=2)
-        # Glyph-only buttons get hover tooltips (reusing the sidebar popup,
-        # which already avoids the transient-black-flicker traps).
-        btn_redl.bind("<Enter>", lambda e, b=btn_redl: self._schedule_sb_tooltip(b, "Re-download this URL", only_when_collapsed=False))
-        btn_redl.bind("<Leave>", lambda e: self._hide_sb_tooltip())
-
-        # Open file button (only if file exists)
-        if file_exists:
-            btn_open = ctk.CTkButton(
-                right, text="", width=34, height=UITheme.H_SM,
-                command=lambda p=filepath: self._open_file(p),
-            )
-            self._style_button(btn_open, "secondary", icon="folder")
-            btn_open.pack(side="left", padx=2)
-            btn_open.bind("<Enter>", lambda e, b=btn_open: self._schedule_sb_tooltip(b, "Open file", only_when_collapsed=False))
-            btn_open.bind("<Leave>", lambda e: self._hide_sb_tooltip())
 
     # --- Gallery view -------------------------------------------------------
     # A wrapping grid of poster tiles. Thumbnails are extracted locally with
@@ -739,6 +739,7 @@ class HistoryPageMixin:
         videos get an ffmpeg frame, audio gets embedded/sidecar cover art.
         """
         w = self._GALLERY_TILE_W
+        _pal = getattr(self, "_palette", {}) or {}
         title = entry.get("title") or entry.get("url", "")[:48] or "Unknown"
         filepath = str(entry.get("filepath") or "")
         # Decided from the real file, not entry["is_video"] - see
@@ -752,7 +753,7 @@ class HistoryPageMixin:
         # load, and so a slow ffmpeg grab never reflows the grid.
         poster = ctk.CTkFrame(tile, height=self._GALLERY_THUMB_H,
                               corner_radius=UITheme.RADIUS_SM,
-                              fg_color=("#2b2b2b", "#1f1f1f"))
+                              fg_color=_pal.get("surface", UITheme.SURFACE_BG))
         poster.pack(fill="x", padx=6, pady=(6, 0))
         poster.pack_propagate(False)
         img_lbl = None
@@ -760,14 +761,14 @@ class HistoryPageMixin:
         audio_path = self._entry_audio_path(entry)
         if vid or audio_path:
             img_lbl = ctk.CTkLabel(poster, text="...", font=UITheme.F(9),
-                                   text_color="#95a5a6")
+                                   text_color=_pal.get("sub", "#95a5a6"))
             img_lbl.pack(expand=True)
         else:
             # Neutral placeholder keeps the grid complete for entries whose
             # file has since been moved or deleted.
             label = "Video" if is_video else ("Audio" if kind == "audio" else "?")
             ctk.CTkLabel(poster, text=label, font=UITheme.F(10),
-                         text_color="#7f8c8d").pack(expand=True)
+                         text_color=_pal.get("sub", "#95a5a6")).pack(expand=True)
 
         ctk.CTkLabel(tile, text=title, font=UITheme.F(10), anchor="w",
                      wraplength=w - 16, justify="left",

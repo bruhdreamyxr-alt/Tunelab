@@ -18,7 +18,7 @@ from tkinter import messagebox
 from typing import Any, Optional
 
 import customtkinter as ctk
-from ui_theme import UITheme, _mix, _paint_icon
+from ui_theme import UITheme, _mix, _paint_icon, _on_color
 from ui_widgets import build_update_banner
 import download_queue
 import downloader
@@ -306,12 +306,16 @@ class UpdatesPageMixin:
         ctk.CTkLabel(head, text="Update Center",
                      font=UITheme.F(15, "bold"), anchor="w"
                      ).pack(anchor="w")
+        # Caption: `sub` is too light on light palettes, so resolve a text that
+        # actually clears 4.5:1 against the page background.
+        cap_bg = pal.get("bg", "#1e1e24")
+        cap_text = _on_color(cap_bg, pal.get("text", "#ecf0f1"), pal.get("sub", "#95a5a6"))
         ctk.CTkLabel(
             head,
             text="New versions, what changed in them, and one place to "
                  "stop being asked.",
             font=UITheme.F(11), anchor="w",
-            text_color=pal.get("sub", "#95a5a6"),
+            text_color=cap_text,
         ).pack(anchor="w")
 
         # Card 1: where this install stands, and the ways to act.
@@ -322,7 +326,8 @@ class UpdatesPageMixin:
                      ).pack(anchor="w", padx=16, pady=(4, 0))
         self.updates_last_lbl = ctk.CTkLabel(
             status, text=self._updates_last_checked_text(),
-            font=UITheme.F(11), anchor="w", text_color="#95a5a6")
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self.updates_last_lbl.pack(anchor="w", padx=16, pady=(0, 2))
         self.updates_status_lbl = ctk.CTkLabel(
             status, text="", font=UITheme.F(12), anchor="w",
@@ -367,7 +372,9 @@ class UpdatesPageMixin:
         self.ytdlp_ver_lbl = ctk.CTkLabel(
             engine,
             text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
-            font=UITheme.F(10), text_color="#95a5a6", anchor="w")
+            font=UITheme.F(10),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            anchor="w")
         self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 4))
 
         # Unattended startup installs: opt-out for packaged builds only
@@ -406,7 +413,8 @@ class UpdatesPageMixin:
         notes.pack(fill="x", padx=0, pady=(0, 8))
         self.updates_notes_title = ctk.CTkLabel(
             notes, text="Run a check to read the newest release notes.",
-            font=UITheme.F(11), anchor="w", text_color="#95a5a6")
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self.updates_notes_title.pack(anchor="w", padx=16, pady=(4, 0))
         self.updates_notes_box = ctk.CTkTextbox(notes, height=220,
                                                 wrap="word")

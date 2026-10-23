@@ -979,3 +979,57 @@ LEGACY_HEX_ROLES = {
     '#2b2b2b': 'surface',
 }
 
+# What colour carries a given status word, so call sites name the meaning
+# ("failed") instead of a hex that only matches one preset palette and goes
+# invisible in a user-made Custom theme.
+STATUS_ROLE = {
+    'done': 'success', 'completed': 'success', 'success': 'success',
+    'failed': 'danger', 'error': 'danger', 'failure': 'danger', 'cancelled': 'danger',
+    'skipped': 'warning', 'missing': 'warning',
+    'pending': 'accent', 'queued': 'accent', 'running': 'accent', 'download': 'accent',
+    'default': 'sub', '': 'sub',
+}
+
+
+def status_color(pal: dict, status: str) -> str:
+    """Palette colour for *status*, falling back to the neutral sub tone.
+
+    ``pal`` may be empty or None while a custom theme is only half built -
+    returns a last-resort sub hex instead of raising.
+    """
+    if not isinstance(pal, dict) or not pal:
+        return '#95a5a6'
+    role = STATUS_ROLE.get(str(status).lower(), STATUS_ROLE['default'])
+    c = pal.get(role) or pal.get('sub')
+    return c or '#95a5a6'
+
+
+# ---------------------------------------------------------------
+# 2026 design tokens (Phase 1 of UI overhaul).
+# Spacing/radius/type scales. Aliases only - no behaviour change.
+# ---------------------------------------------------------------
+SPACE_1 = 4
+SPACE_2 = 8
+SPACE_3 = 12
+SPACE_4 = 16
+SPACE_5 = 24
+SPACE_6 = 32
+
+RADIUS_SM = 6
+RADIUS_MD = 10
+RADIUS_LG = 14
+RADIUS_XL = 20
+
+TYPE_DISPLAY = 28
+TYPE_TITLE = 20
+TYPE_SUBTITLE = 15
+TYPE_BODY = 13
+TYPE_CAPTION = 11
+
+MOTION_FAST = 120
+MOTION_BASE = 200
+MOTION_SLOW = 320
+
+SHADOW_SOFT = (0, 6, 24, 0.18)
+SHADOW_RAISED = (0, 12, 40, 0.28)
+

@@ -132,6 +132,17 @@ from ui_widgets import (  # noqa: E402  (after the ctk import)
     UiSplitsMixin,
     hide_scrollbar_until_hover,
 )
+# 2026 overhaul scaffolding (tokens + primitives + shell + motion). Imported so
+# ui.<name> resolves; not yet wired into the live layout (Phase 4+).
+try:
+    import ui_components  # noqa: E402
+    import ui_layout  # noqa: E402
+    import ui_motion  # noqa: E402
+except Exception:  # pragma: no cover
+    ui_components = None
+    ui_layout = None
+    ui_motion = None
+
 
 from pages.history import HistoryPageMixin  # noqa: E402
 from pages.queue import QueuePageMixin  # noqa: E402
@@ -1070,11 +1081,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._style_button(self.btn_cancel_download, "danger", icon="stop")
         progress_row.pack_forget()
 
-        self.dl_detail = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#95a5a6")
+        self.dl_detail = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self._pack_h_if_used(self.dl_detail, pady=(0, UITheme.RHYTHM // 2))
 
         # Speed + ETA label below progress bar
-        self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#7f8c8d")
+        self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self._pack_h_if_used(self.dl_speed_lbl, pady=(0, UITheme.RHYTHM))
 
         # Row: save folder + audio quality side by side (was two stacked rows).
@@ -1108,7 +1121,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self.tab_downloader,
             text="",
             font=UITheme.F(11),
-            text_color="#95a5a6",
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
             wraplength=340,
             justify="center",
         )
@@ -2377,7 +2390,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     def build_studio_view(self):
         self.file_frame = ctk.CTkFrame(self.tab_studio, fg_color="transparent")
         self.file_frame.pack(pady=(12,4), padx=20, fill="x")
-        self.file_lbl = ctk.CTkLabel(self.file_frame, text="Load a music file...", font=UITheme.F(12, "italic"), text_color="#95a5a6")
+        self.file_lbl = ctk.CTkLabel(self.file_frame, text="Load a music file...", font=UITheme.F(12, "italic"),
+                                     text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self.file_lbl.pack(side="left", padx=10, pady=10)
         self.btn_browse_studio = ctk.CTkButton(
             self.file_frame, text="Browse Audio", width=100,
@@ -2464,7 +2478,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         ctk.CTkLabel(
             theme_card,
             text="Light/Dark follows the palette you pick here.",
-            font=UITheme.F(10), anchor="w", text_color="#95a5a6",
+            font=UITheme.F(10), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
         ).pack(fill="x", padx=16, pady=(0, 12))
 
         self._build_custom_theme_card()
@@ -2495,7 +2510,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         ctk.CTkLabel(
             rail_card,
             text="Ctrl+B, or the row at the bottom of the rail, collapses it any time.",
-            font=UITheme.F(11), text_color="#95a5a6", anchor="w",
+            font=UITheme.F(11),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            anchor="w",
             wraplength=560, justify="left").pack(anchor="w", padx=16, pady=(0, 4))
 
         self.sb_peek_var = tk.BooleanVar(value=bool(self._sb_peek_pref))
@@ -2508,7 +2525,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             text="Off by default — a rail that opens itself every time the pointer "
                  "crosses it gets in the way. When on, only the icon column arms "
                  "it, nothing moves but the width, and it closes as you leave.",
-            font=UITheme.F(11), text_color="#95a5a6", anchor="w",
+            font=UITheme.F(11),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            anchor="w",
             wraplength=560, justify="left").pack(anchor="w", padx=16, pady=(0, 4))
 
         self.nav_anim_var = tk.BooleanVar(value=bool(self.nav_anim_enabled))
@@ -2527,7 +2546,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.nav_anim_speed_slider.pack(padx=16, pady=(0, 2), fill="x")
         self.nav_anim_speed_lbl = ctk.CTkLabel(
             rail_card, text=f"{int(self.nav_anim_speed)} frames",
-            font=UITheme.F(10), text_color="#95a5a6", anchor="w")
+            font=UITheme.F(10),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            anchor="w")
         self.nav_anim_speed_lbl.pack(anchor="w", padx=16, pady=(0, 12))
 
         self.tab_customization.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -2599,7 +2620,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.aria2_var = tk.BooleanVar(value=_saved_aria)
         self.aria2_chk = ctk.CTkCheckBox(tuning, text="Enable aria2 external downloader", variable=self.aria2_var)
         self.aria2_chk.pack(anchor="w", padx=16, pady=(4, 0))
-        ctk.CTkLabel(tuning, text="Uses aria2 for parallel connections (faster downloads).", font=UITheme.F(11), text_color="#95a5a6", wraplength=600, justify="left").pack(anchor="w", padx=16, pady=(0, 2))
+        ctk.CTkLabel(tuning, text="Uses aria2 for parallel connections (faster downloads).", font=UITheme.F(11),
+                     text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+                     wraplength=600, justify="left").pack(anchor="w", padx=16, pady=(0, 2))
 
         ctk.CTkLabel(tuning, text="aria2 connections:  (max 16 — aria2 hard limit)", font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(2, 0))
         self.aria2_conn_slider = ctk.CTkSlider(tuning, from_=1, to=16, number_of_steps=15)
@@ -2650,7 +2673,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # control in the Maintenance list. Same reasoning as Clear History.
         self._style_button(self.clear_cache_btn, "ghost", bordered=True, icon="trash")
 
-        self.perf_status = ctk.CTkLabel(maint, text="Current: default", font=UITheme.F(11), text_color="#95a5a6", anchor="w")
+        self.perf_status = ctk.CTkLabel(maint, text="Current: default", font=UITheme.F(11),
+                                        text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+                                        anchor="w")
         self.perf_status.pack(anchor="w", padx=16, pady=(2, 14))
 
     def apply_performance_settings(self):
@@ -2752,7 +2777,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         for opt in ('fg_color', 'hover_color', 'border_color',
                     'text_color', 'progress_color', 'button_color',
                     'button_hover_color', 'label_fg_color',
-                    'label_text_color'):
+                    'label_text_color',
+                    'selected_color', 'unselected_color',
+                    'selected_hover_color', 'unselected_hover_color',
+                    'placeholder_text_color', 'text_color_disabled',
+                    'dropdown_fg_color', 'dropdown_hover_color',
+                    'dropdown_text_color',):
             try:
                 cur = w.cget(opt)
             except Exception:
@@ -3668,7 +3698,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self._sb_texts[name].configure(text_color=label_c)
             except Exception:
                 logger.debug("nav row %r repaint failed", name, exc_info=True)
-            self._repaint_nav_hint(name, base, accent, text_c, sub_c)
+            self._repaint_nav_hint(name, base, accent, text_c, sub_c,
+                                   fill=fill)
 
         # Brand tile, footer chip, hairline, section headers.
         try:
@@ -3698,19 +3729,25 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         for hdr in getattr(self, '_sb_headers', []):
             try:
-                hdr.configure(text_color=_mix(base, sub_c, 0.9))
+                # Readable secondary on every background: let _on_color pick
+                # text_c (dark on light, light on dark) over sub_c so the
+                # section banners always clear 4.5:1.
+                hdr.configure(text_color=_on_color(base, text_c, sub_c))
             except Exception:
                 pass
 
     def _repaint_nav_hint(self, name, base: Optional[str] = None,
                           accent: Optional[str] = None,
                           text_c: Optional[str] = None,
-                          sub_c: Optional[str] = None):
+                          sub_c: Optional[str] = None,
+                          fill: Optional[str] = None):
         """Right slot: an accent badge while a count is set, else the digit.
 
-        Takes the already-mixed colors when _repaint_nav_rows is looping (so
-        the palette is read once), and can be called with just a name from
-        _set_nav_badge when a count changes on its own.
+        ``fill`` is the row's *current* chip fill (sidebar or accent-tint on an
+        active/hovered row). The slot is transparent, so the digit sits on
+        that fill: its ink must be chosen against *fill*, not against the raw
+        sidebar, otherwise an accent-tinted chip on a dark palette puts a muted
+        sub tone below 4.5:1 (Serika Dark: sub #a9aaad on active_fill #4d472c).
         """
         lbl = getattr(self, '_sb_hints', {}).get(name)
         if lbl is None:
@@ -3728,6 +3765,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         accent = accent or UITheme.COLOR_PRIMARY
         text_c = text_c or '#ecf0f1'
         sub_c = sub_c or UITheme.COLOR_GRAY
+        if fill is None:
+            fill = base
         count = getattr(self, '_sb_badges', {}).get(name) or 0
         try:
             if count:
@@ -3737,8 +3776,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     text_color=_on_color(accent, text_c, base),
                     border_width=0)
             else:
+                # Digit inherits the row's chip fill. Pick ink against that
+                # actual fill so the shortcut stays readable on an active row.
+                on_fill = _on_color(fill, sub_c, text_c)
                 lbl.configure(text=self._SB_KEYS.get(name, ""),
-                              fg_color="transparent", text_color=sub_c)
+                              fg_color="transparent",
+                              text_color=on_fill)
         except Exception:
             pass
 
@@ -4500,6 +4543,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
         accent_hover = pal.get("accent_hover", "#2980b9")
         text = pal.get("text", "#ecf0f1")
+        sub = pal.get("sub", UITheme.COLOR_GRAY)
         # The unchecked ring has to be *seen*: the palette's hover tone is a
         # surface step, too close to the page on the light themes, so the
         # ring uses the muted text tone instead.
@@ -4510,6 +4554,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # The checkmark is drawn *on* the accent, so it is chosen for contrast
         # (a palette text tone would vanish into a yellow or cyan accent).
         on_accent = _on_color(accent, text, pal.get("bg", "#1e1e24"))
+        # Field fill. An entry is a flat panel, so it borrows the page's own
+        # background: a window-tone box reads as a field without needing a
+        # different shade that every palette has to tune by hand.
+        field = pal.get("bg", UITheme.SURFACE_BG)
+        # Selected/unselected ink for segmented buttons: the selected segment
+        # is the accent, the rest stays on the sidebar so the control sits in
+        # its own row rather than jumping forward.
+        seg_unsel = pal.get("sidebar", "#1b2532")
         recipes = (
             (ctk.CTkCheckBox, {"fg_color": accent, "hover_color": accent_hover,
                                "border_color": edge,
@@ -4519,6 +4571,40 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                              "button_hover_color": accent_hover}),
             (ctk.CTkProgressBar, {"fg_color": trough, "progress_color": accent,
                                   "border_color": trough}),
+            # CTkEntry: flat field, palette text, hover-toned hairline.
+            (ctk.CTkEntry, {"fg_color": field, "text_color": text,
+                            "placeholder_text_color": sub,
+                            "border_color": pal.get("hover", UITheme.SIDEBAR_HOVER),
+                            "border_width": UITheme.BORDER_W,
+                            "corner_radius": UITheme.RADIUS_FIELD}),
+            # CTkSegmentedButton. CTk ships this with a default that makes the
+            # selected and unselected segments the same grey - the toggle then
+            # shows no state at all. Accent on the active segment, sidebar on
+            # the rest, text on the palette text tone which sits above both.
+            (ctk.CTkSegmentedButton, {
+                "fg_color": "transparent",
+                "selected_color": accent,
+                "selected_hover_color": accent_hover,
+                "unselected_color": seg_unsel,
+                "unselected_hover_color": pal.get("hover", "#34495e"),
+                "text_color": text,
+            }),
+            # CTkRadioButton: accent dot, palette ring and text. CTk's default
+            # radio dot is its blue, which is wrong for every non-blue palette.
+            (ctk.CTkRadioButton, {"fg_color": accent,
+                                  "hover_color": accent_hover,
+                                  "border_color": edge,
+                                  "text_color": text}),
+            # CTkComboBox mirrors the option menu recipe exactly so the two
+            # controls are indistinguishable at a glance.
+            (ctk.CTkComboBox, {
+                "fg_color": pal.get("sidebar_active", "#2c3e50"),
+                "text_color": _on_color(pal.get("sidebar_active", "#2c3e50"),
+                                        text, pal.get("bg", "#1e1e24")),
+                "button_color": accent,
+                "button_hover_color": accent_hover,
+                "border_color": pal.get("hover", "#34495e"),
+            }),
         )
         done = 0
         for widget in self._iter_widgets():
