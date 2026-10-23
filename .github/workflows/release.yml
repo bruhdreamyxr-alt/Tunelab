@@ -36,11 +36,14 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_WINDOWS }}
+          cache: 'pip'
 
       - name: Show the build environment
         shell: pwsh
@@ -56,12 +59,19 @@ jobs:
         # Program Files (x86), which tools/build_windows.ps1 auto-detects.
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) {
-            Write-Host "::error::ISCC.exe not found at $iscc after installing innosetup"
-            exit 1
+          $cacheDir = Join-Path $env:RUNNER_TOOL_CACHE 'InnoSetup6'
+          if (-not (Test-Path (Join-Path $cacheDir 'ISCC.exe'))) {
+            Write-Host '==> Installing Inno Setup (not in cache)'
+            choco install innosetup --no-progress -y
+            }
+            New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+            Copy-Item -Path (Join-Path $src '*') -Destination $cacheDir -Recurse -Force
+          } else {
+            Write-Host '==> Inno Setup found in cache'
           }
+          $iscc = Join-Path $cacheDir 'ISCC.exe'
+          echo "ISCC_PATH=$iscc" >> $env:GITHUB_ENV
+          Write-Host "ISCC: $iscc"
           Write-Host "ISCC: $iscc"
 
       - name: Build the app, the update ZIP and the installer
@@ -71,7 +81,9 @@ jobs:
         # large to commit), runs the test suite, builds updater_cli.exe, the
         # app, the self-update ZIP and the installer.
         shell: pwsh
-        run: pwsh -NoProfile -File tools/build_windows.ps1
+        run: |
+          $skip = if ("${{ github.ref }}" -match '^refs/tags/') { '-SkipTests' } else { '' }
+          pwsh -NoProfile -File tools/build_windows.ps1 $skip
 
       - name: Show what was produced
         shell: pwsh
@@ -79,20 +91,13 @@ jobs:
           Get-ChildItem dist | Select-Object @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, Name | Format-Table -AutoSize
           Get-ChildItem mysetup*.exe | Select-Object @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, Name | Format-Table -AutoSize
 
-      - name: Upload the installer
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: UniversalAudioStudio-Windows-installer
-          path: mysetup*.exe
-          if-no-files-found: error
-
-      - name: Upload the self-update ZIP
-        # This is the file installed copies download by themselves; the name's
-        # "_update.zip" suffix is what updater.py looks for in a Release.
-        uses: actions/upload-artifact@v7
-        with:
-          name: UniversalAudioStudio-Windows-update-zip
-          path: dist/*_update.zip
+          name: UniversalAudioStudio-Windows-build
+          path: |
+            mysetup*.exe
+            dist\UniversalAudioStudio_*_update.zip
           if-no-files-found: error
 
   release:
@@ -105,6 +110,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
         # Only needed to read version.py. Without it the bare `python` command
@@ -113,6 +120,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_WINDOWS }}
+          cache: 'pip'
 
       - name: Check the tag matches version.py
         # The artifact filenames come from version.py while the Release is named
@@ -128,11 +136,11 @@ jobs:
           fi
           echo "tag $TAG matches version.py $VERSION"
 
-      - name: Download every build artifact
+      - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
+          name: UniversalAudioStudio-Windows-build
           path: release-files
-          merge-multiple: true
 
       - name: List what will be published
         run: ls -lh release-files
