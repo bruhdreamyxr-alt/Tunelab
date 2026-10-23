@@ -926,7 +926,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # fill="x" so the row spans the window width and its buttons are never
         # pushed past the right edge on narrow windows.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        action_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        action_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
 
         self.dl_mode_var = ctk.StringVar(value="audio")
         self.dl_mode_toggle = ctk.CTkSegmentedButton(
@@ -957,7 +957,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Starts hidden - previews only make sense once a URL is pasted, so the
         # row stays out of sight until then instead of claiming permanent space.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        preview_frame.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        preview_frame.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
         preview_frame.pack_forget()
         self._preview_frame = preview_frame
 
@@ -1065,7 +1065,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # the moment a download starts and goes away again when it ends.
         self._progress_row = progress_row = ctk.CTkFrame(
             self.tab_downloader, fg_color="transparent")
-        progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
         self.progress_bar = ctk.CTkProgressBar(progress_row, width=200)
         self.progress_bar.set(0)
         self.progress_bar.pack(side="left", fill="x", expand=True)
@@ -1092,7 +1092,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Row: save folder + audio quality side by side (was two stacked rows).
         settings_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        settings_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        settings_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
         self.btn_choose_folder = ctk.CTkButton(
             settings_row,
             text="Change Save Folder",
