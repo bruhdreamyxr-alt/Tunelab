@@ -893,7 +893,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             placeholder_text="Paste link or search song name"
         )
         setattr(self.url_entry, "_theme_roles", {"border_color": "hover"})
-        self.url_entry.pack(pady=(14,8), padx=UITheme.PAD_X, fill="x")
+        self.url_entry.pack(pady=(14,8), anchor="center")
 
         # Inline clear button: overlays the field's right edge and only shows
         # while there is text to clear (Escape does the same from the keyboard).
@@ -926,7 +926,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # fill="x" so the row spans the window width and its buttons are never
         # pushed past the right edge on narrow windows.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        action_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
+        action_row.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
 
         self.dl_mode_var = ctk.StringVar(value="audio")
         self.dl_mode_toggle = ctk.CTkSegmentedButton(
