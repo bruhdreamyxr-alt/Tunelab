@@ -98,6 +98,9 @@ class HistoryPageMixin:
             command=self._on_history_view_toggled,
         )
         self.history_view_toggle.pack(side="right", padx=(0, 12))
+        setattr(self.history_view_toggle, "_theme_roles",
+                {"selected_color": "accent", "unselected_color": "sidebar",
+                 "text_color": "text"})
         self.history_view_toggle.set(self.history_view_var.get())
 
         # Search bar + sort filters on one header row, so the page opens with

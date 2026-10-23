@@ -18,7 +18,7 @@ from tkinter import messagebox
 from typing import Any, Optional
 
 import customtkinter as ctk
-from ui_theme import UITheme, _mix, _paint_icon, _on_color
+from ui_theme import UITheme, _mix, _on_color
 from ui_widgets import build_update_banner
 import download_queue
 import downloader
@@ -294,15 +294,6 @@ class UpdatesPageMixin:
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
         head = ctk.CTkFrame(scroll, fg_color="transparent")
         head.pack(fill="x", padx=0, pady=(0, 8))
-        tile = ctk.CTkFrame(
-            head, width=44, height=44,
-            corner_radius=UITheme.RADIUS_SM, fg_color="transparent")
-        tile.pack(side="left", padx=(0, 12))
-        glyph = tk.Canvas(
-            tile, width=44, height=44, highlightthickness=0, bd=0,
-            bg=_mix(pal.get("bg", "#1e1e24"), accent, 0.18))
-        glyph.place(relx=0.5, rely=0.5, anchor="center")
-        _paint_icon(glyph, "update", accent, size=32, width=3)
         ctk.CTkLabel(head, text="Update Center",
                      font=UITheme.F(15, "bold"), anchor="w"
                      ).pack(anchor="w")
@@ -317,7 +308,6 @@ class UpdatesPageMixin:
             font=UITheme.F(11), anchor="w",
             text_color=cap_text,
         ).pack(anchor="w")
-
         # Card 1: where this install stands, and the ways to act.
         status = self._settings_card(scroll, "This app")
         status.pack(fill="x", padx=0, pady=(0, 8))

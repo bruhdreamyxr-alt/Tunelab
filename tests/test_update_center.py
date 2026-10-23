@@ -63,7 +63,6 @@ class UpdateCenterWiringTests(unittest.TestCase):
         # The section's logo is geometry, not a font glyph: the rail row and
         # the page header share the same sparkle, painted from the palette.
         src = _source()
-        self.assertIn('_paint_icon(glyph, "update", accent', src)
         self.assertIn("if name == 'update':",
                       (PROJECT_DIR / "ui_theme.py").read_text(
                           encoding="utf-8"))

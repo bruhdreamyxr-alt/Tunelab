@@ -117,6 +117,9 @@ def _sb_row_state(pal, fill, edge, bw, icon_c, label_c, base):
     return (id(pal), fill, _ring_color(edge, fill, base), bw, icon_c, label_c)
 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=4096)
 def _mix(a: str, b: str, t: float) -> str:
     """Blend two '#rrggbb' colors; ``t``=0 keeps ``a``, ``t``=1 gives ``b``.
 

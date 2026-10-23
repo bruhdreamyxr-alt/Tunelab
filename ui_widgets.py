@@ -84,6 +84,7 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
         text=f"Update available: {local_ver} → {remote_ver}. Installing "
              f"closes the app and relaunches it.",
         font=UITheme.F(11), anchor="w", justify="left",
+        wraplength=420,
         text_color=palette.get("text", "#ecf0f1"),
     ).pack(side="left", fill="x", expand=True)
 

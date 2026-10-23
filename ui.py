@@ -727,17 +727,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # stays off unless it was asked for.
         self._sb_peek_pref = bool(self._prefs.get('sidebar_peek_on_hover', False))
 
-        # Downloader builds now; the rest build on first visit (see show_frame
-        # and _ensure_page_built). Building everything up front cost ~1-1.5s of
-        # the ~2.8s construct for pages the user may never open.
-        self._built_pages: set = set()
-        self.build_downloader_view()
-        self._built_pages.add('downloader')
-
-        # -----------------
-        # Rail contents (brand, grouped nav rows, badge slots, footer toggle)
-        # -----------------
-
         # Saved download settings (#1 save folder, #2 audio format).
         try:
             _saved_folder = str(self._prefs.get('save_folder', '') or '').strip()
@@ -746,6 +735,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             downloader.set_audio_format(str(self._prefs.get('audio_format', 'mp3_vbr')))
         except Exception:
             logger.debug("Applying download prefs failed", exc_info=True)
+
+        # Downloader builds now; the rest build on first visit (see show_frame
+        # and _ensure_page_built). Building everything up front cost ~1-1.5s of
+        # the ~2.8s construct for pages the user may never open.
+        self._built_pages: set = set()
+        self.build_downloader_view()
+        self._built_pages.add('downloader')
 
         # Apply saved performance prefs at startup so the "fast downloader"
         # settings survive restarts and are active before the user opens the
