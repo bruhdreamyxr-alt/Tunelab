@@ -3057,7 +3057,7 @@ class ScrollbarVisibilityTests(unittest.TestCase):
     @requires_ctk
     def test_the_bar_is_painted_in_the_well_fill_so_it_is_invisible(self):
         fill = self.canvas.cget("bg")
-        self.assertEqual(self.bar.cget("button_color"), fill)
+        self.assertEqual(self.bar._button_color, fill)
         self.assertEqual(self.bar.cget("fg_color"), fill)
 
     @requires_ctk
@@ -3066,10 +3066,10 @@ class ScrollbarVisibilityTests(unittest.TestCase):
         canvas = self.bar._canvas
         canvas.event_generate("<Enter>", x=2, y=10)
         self.app.update()
-        self.assertNotEqual(self.bar.cget("button_color"), fill)
+        self.assertNotEqual(self.bar._button_color, fill)
         canvas.event_generate("<Leave>", x=2, y=10)
         self.app.update()
-        self.assertEqual(self.bar.cget("button_color"), fill)
+        self.assertEqual(self.bar._button_color, fill)
 
     @requires_ctk
     def test_it_still_scrolls_while_invisible(self):
