@@ -165,3 +165,9 @@ unlocked_context.txt
 # repository and was later removed. It is fetched on demand, so
 # re-ignoring it keeps it from creeping back into a commit.
 flownet.bin
+
+
+# UI overhaul audit artifacts
+_shots/
+_shots_before/
+_audit_contrast_before.txt
