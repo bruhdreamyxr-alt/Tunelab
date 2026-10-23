@@ -1153,7 +1153,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # --- Queue + Tag Editor controls ---
         controls_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        controls_row.pack(fill="x", padx=UITheme.PAD_X, pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
+        controls_row.pack(anchor="center", pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
 
         self.btn_add_to_queue = ctk.CTkButton(
             controls_row, text="➕ Add to Queue", width=130, height=UITheme.H_SM,
