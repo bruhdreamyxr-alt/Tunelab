@@ -1,0 +1,16 @@
+# Changelog
+
+## 2.9.1 — 2026-10-23
+
+### Fixed
+- Reverted `downloader.py` and `ui.py` to the stable v2.8.0 state, undoing the 2.9.0 regressions:
+  - `success_callback` now passes the actual produced file path (not the folder), so the UI opens the correct file after download
+  - `open_in_file_manager` uses `os.startfile` on Windows before `explorer.exe`, fixing Explorer failing to open download folders
+  - Removed the black square that appeared on the clear button
+- Declared the missing `history_view` preference (`"list"`) in `_default_prefs()` so the history tab's list/gallery choice persists across restarts
+
+### Changed
+- `version.py` bumped from 2.9.0 to 2.9.1
+
+### CI
+- `release.yml`: cache pip dependencies, shallow clone, cache Inno Setup, skip redundant test re-run on tag pushes, combined artifact upload
