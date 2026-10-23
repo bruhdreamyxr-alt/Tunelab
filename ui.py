@@ -82,6 +82,7 @@ def _lazy_import_vlc() -> Any:
 
 # Helper for faster PySceneDetect execution in a separate process to avoid GIL/GUI freezes
 ctk.set_appearance_mode("Dark")
+ctk.set_widget_scaling(1.0)
 ctk.set_default_color_theme("blue")
 
 
@@ -3288,6 +3289,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         setattr(row, "_nav_name", name)
         for widget in (row, ic, tx, hint):
+            if widget is None:
+                continue
             try:
                 # No add="+": CustomTkinter's bind() takes a bool and always
                 # binds additively onto its internal widgets, so passing the

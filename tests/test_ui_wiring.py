@@ -3014,7 +3014,7 @@ def _pump_until_history_idle(app, timeout: float = 10.0,
         gen = getattr(app, "_history_read_epoch", 0)
         pending = getattr(app, "_history_read_pending", False)
         again = getattr(app, "_history_read_again", False)
-        started = gen > since_gen if require_new_read else True
+        started = (int(gen) > int(since_gen)) if require_new_read else True
         if started and not pending and not again:
             return True
         time.sleep(0.005)
