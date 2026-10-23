@@ -106,7 +106,7 @@ def main() -> int:
     wells = dict((name, (frame, canvas, bar))
                  for name, frame, canvas, bar in scroll_well(app))
     before = {name: _rgb(c.cget("bg")) for name, (_, c, _) in wells.items()}
-    bars_before = {name: _rgb(bar.cget("button_color"))
+    bars_before = {name: _rgb(bar._button_color)
                    for name, (_, _, bar) in wells.items() if bar is not None}
     menus_before = {id(m): _rgb(m.cget("fg_color")) for _, m in dropdowns(app)}
 
@@ -131,7 +131,7 @@ def main() -> int:
         # Check the resting state (invisible) and the hovered state (real
         # handle) separately - asserting the handle at rest is what would have
         # made this probe report the hiding as a regression.
-        resting = _rgb(bar.cget("button_color")) if bar is not None else None
+        resting = _rgb(bar._button_color) if bar is not None else None
         if resting != got:
             failures.append(f"{name}: hidden scrollbar is {resting}, but the "
                             f"well is {got} - it would be visible at rest")
@@ -151,7 +151,7 @@ def main() -> int:
                 enter, leave = handlers
                 enter()
                 app.update_idletasks()
-                hovered = _rgb(bar.cget("button_color"))
+                hovered = _rgb(bar._button_color)
                 if hovered != want_handle:
                     failures.append(f"{name}: hovered scrollbar handle is {hovered}, "
                                     f"palette sub is {want_handle}")
@@ -159,7 +159,7 @@ def main() -> int:
                     failures.append(f"{name}: the scrollbar handle never appears")
                 leave()
                 app.update_idletasks()
-                if _rgb(bar.cget("button_color")) != got:
+                if _rgb(bar._button_color) != got:
                     failures.append(f"{name}: scrollbar did not hide again on leave")
 
     for menu, drop in dropdowns(app):
@@ -180,3 +180,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
