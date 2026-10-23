@@ -893,7 +893,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             placeholder_text="Paste link or search song name"
         )
         setattr(self.url_entry, "_theme_roles", {"border_color": "hover"})
-        self.url_entry.pack(pady=(14,8), anchor="center")
+        self.url_entry.pack(pady=(14,8), padx=UITheme.PAD_X, fill="x")
 
         # Inline clear button: overlays the field's right edge and only shows
         # while there is text to clear (Escape does the same from the keyboard).
@@ -957,7 +957,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Starts hidden - previews only make sense once a URL is pasted, so the
         # row stays out of sight until then instead of claiming permanent space.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        preview_frame.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
+        preview_frame.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
         preview_frame.pack_forget()
         self._preview_frame = preview_frame
 
@@ -1092,7 +1092,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Row: save folder + audio quality side by side (was two stacked rows).
         settings_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        settings_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
+        settings_row.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
         self.btn_choose_folder = ctk.CTkButton(
             settings_row,
             text="Change Save Folder",
