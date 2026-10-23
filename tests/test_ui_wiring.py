@@ -20,8 +20,6 @@ import re
 import shutil
 import sys
 import tempfile
-import threading
-import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -834,21 +832,9 @@ class ThemedDialogTests(unittest.TestCase):
     def test_technical_detail_is_capped_on_screen_but_not_when_copied(self):
         body = _method_source("_show_dialog")
         self.assertIn("Copy details", body)
-        self.assertIn("clipboard_append(copy_text)", body)  # full text, not preview
+        self.assertIn("clipboard_append(detail)", body)   # full text, not preview
         self.assertIn("len(lines) > 8", body)             # preview is capped
         self.assertIn('if detail:', body)                 # block only when needed
-        # copy_text joins the headline with the uncapped detail, so the copy
-        # is never the truncated on-screen preview.
-        self.assertIn('copy_text = "\\n\\n".join(p for p in (message, detail) if p)',
-                      body)
-
-    def test_error_dialogs_always_offer_a_copy_button(self):
-        # A failure passed as a plain message (no detail=, e.g. the AE
-        # conversion worker's str(exc)) must still be copyable for bug
-        # reports; info/warning dialogs keep the detail-only behaviour.
-        body = _method_source("_show_dialog")
-        self.assertIn('if copy_text and (detail or kind == "error"):', body)
-        self.assertIn('"Copy error text" if kind == "error"', body)
 
     def test_the_dialog_runs_its_text_through_the_splitter(self):
         # Headline tidying lives in ui._split_headline (unit-tested on its own);
@@ -864,7 +850,7 @@ class ThemedDialogTests(unittest.TestCase):
         # Every button packs side="right", which lays out right-to-left: the
         # later a button is packed, the further left it lands.
         ok = body.index('text="OK"')
-        copy = body.index("text=copy_label")
+        copy = body.index('text="Copy details"')
         action = body.index("if action_label and action_cb:")
         self.assertLess(ok, copy)
         self.assertLess(copy, action)
@@ -2974,53 +2960,6 @@ def _new_app():
     return app
 
 
-def _pump_until_history_idle(app, timeout: float = 10.0,
-                             since_gen: int | None = None,
-                             require_new_read: bool = True) -> bool:
-    """Pump the event loop until a history read has started and settled.
-
-    The deferred history refresh is asynchronous: a 15ms timer fires
-    _refresh_history_async, which reads the history file on a worker
-    thread and renders the result back on the main thread. Both hops
-    cross a thread boundary, so a fixed number of update() calls is a
-    guess about how fast the machine is - on a loaded CI runner the
-    worker had not landed yet and the test counted zero rebuilds.
-
-    Waiting only for "nothing pending" is not enough either: before the
-    timer fires, nothing is pending, so the pump would return at once
-    and the test would count zero rebuilds. The epoch counter
-    (_history_read_epoch) is bumped only when a read ACTUALLY starts, so
-    it tells us the timer really fired. The generation counter
-    (_history_read_gen) is not used for this: it also moves when a stale
-    read is invalidated, which would look like a read that never ran.
-
-    since_gen: only settle once the epoch has moved past this value.
-    Defaults to the current epoch, i.e. "wait for the next read to start
-    and finish". Pass require_new_read=False to just wait for any
-    in-flight read to settle, without requiring a new one to have
-    started.
-
-    Returns False on timeout so the caller can fail with a useful
-    message rather than hang.
-    """
-    if since_gen is None:
-        since_gen = getattr(app, "_history_read_epoch", 0)
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            app.update()
-        except Exception:
-            return False
-        gen = getattr(app, "_history_read_epoch", 0)
-        pending = getattr(app, "_history_read_pending", False)
-        again = getattr(app, "_history_read_again", False)
-        started = (int(gen) > int(since_gen)) if require_new_read else True
-        if started and not pending and not again:
-            return True
-        time.sleep(0.005)
-    return False
-
-
 class ScrollbarVisibilityTests(unittest.TestCase):
     """Scrollbars are invisible until the pointer reaches them."""
 
@@ -3057,7 +2996,7 @@ class ScrollbarVisibilityTests(unittest.TestCase):
     @requires_ctk
     def test_the_bar_is_painted_in_the_well_fill_so_it_is_invisible(self):
         fill = self.canvas.cget("bg")
-        self.assertEqual(self.bar._button_color, fill)
+        self.assertEqual(self.bar.cget("button_color"), fill)
         self.assertEqual(self.bar.cget("fg_color"), fill)
 
     @requires_ctk
@@ -3066,10 +3005,10 @@ class ScrollbarVisibilityTests(unittest.TestCase):
         canvas = self.bar._canvas
         canvas.event_generate("<Enter>", x=2, y=10)
         self.app.update()
-        self.assertNotEqual(self.bar._button_color, fill)
+        self.assertNotEqual(self.bar.cget("button_color"), fill)
         canvas.event_generate("<Leave>", x=2, y=10)
         self.app.update()
-        self.assertEqual(self.bar._button_color, fill)
+        self.assertEqual(self.bar.cget("button_color"), fill)
 
     @requires_ctk
     def test_it_still_scrolls_while_invisible(self):
@@ -3278,385 +3217,6 @@ class UpdateBannerTests(unittest.TestCase):
         self.assertLess(len(preview), len(long))
         self.assertIn("...", preview)
         self.assertEqual(_shorten_release_notes("short note"), "short note")
-
-
-@requires_ctk
-class HistoryGalleryWidgetTests(unittest.TestCase):
-    """The gallery renders on a real window; List stays the default.
-
-    Source guards cannot see a tile that fails to construct or rows drawn
-    on top of the grid, so this drives the actual widgets: one shared
-    window for the class (the suite-wide speed pattern), entries injected
-    so the test does not depend on the machine's real history.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls._startup_patch = _quiet_startup_check()
-        cls._startup_patch.start()
-        cls.addClassCleanup(cls._startup_patch.stop)
-        cls.addClassCleanup(_destroy_class_app, cls)
-        cls.app = _new_app()
-
-    def test_gallery_renders_a_tile_per_entry(self):
-        app = type(self).app
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        clip = os.path.join(tmp.name, "clip.mp4")
-        with open(clip, "wb") as fh:
-            fh.write(b"\x00" * 64)
-        song = os.path.join(tmp.name, "song.mp3")
-        with open(song, "wb") as fh:
-            fh.write(b"\x00" * 64)
-        shadow = os.path.join(tmp.name, "shadow.mp4")
-        with open(shadow, "wb") as fh:
-            fh.write(b"\x00" * 64)
-        entries = [
-            {"url": "https://example.invalid/v", "title": "Clip",
-             "filepath": clip, "status": "done", "is_video": True,
-             "completed_at": 1.0},
-            {"url": "https://example.invalid/a", "title": "Song",
-             "filepath": song,
-             "status": "done", "is_video": False, "completed_at": 2.0},
-            {"url": "https://example.invalid/g", "title": "Gone",
-             "filepath": os.path.join(tmp.name, "gone.mp3"),
-             "status": "done", "is_video": False, "completed_at": 2.5},
-            {"url": "https://example.invalid/m", "title": "Missing video",
-             "filepath": os.path.join(tmp.name, "gone.mp4"),
-             "status": "done", "is_video": True, "completed_at": 2.6},
-            # The reported bug itself: a real .mp4 recorded with the audio
-            # flag. It must still get a poster well, not "Video" text.
-            {"url": "https://example.invalid/s", "title": "Shadow",
-             "filepath": shadow, "status": "done", "is_video": False,
-             "completed_at": 3.0},
-        ]
-        orig_pref = app._history_view_pref()
-        self.addCleanup(app._set_pref, "history_view", orig_pref)
-        app._history_entries = lambda: entries
-        self.addCleanup(lambda: app.__dict__.pop("_history_entries", None))
-        app._set_pref("history_view", "gallery")
-        app.show_frame("history")
-        app._refresh_history_view(force=True)
-        app.update()
-
-        widgets = list(app._iter_widgets(app._history_entries_frame))
-        btn_texts = [w.cget("text") for w in widgets
-                     if isinstance(w, ctk.CTkButton)]
-        # Five entries -> five tiles, each offering the list row's actions.
-        self.assertEqual(btn_texts.count("Re-download"), 5)
-        self.assertEqual(btn_texts.count("Open"), 5)
-        label_texts = [w.cget("text") for w in widgets
-                       if isinstance(w, ctk.CTkLabel)]
-        # The missing-file entries keep neutral tiles; present files get a
-        # poster well for their frame/cover. The well reads "..." until the
-        # background worker lands, then "No preview" for these zero-byte
-        # stand-ins (ffmpeg/mutagen find no real frame or cover) - either
-        # way it is a poster well, never an "Audio"/"Video" text tile.
-        self.assertIn("Audio", label_texts)
-        self.assertIn("Video", label_texts)
-        wells = label_texts.count("...") + label_texts.count("No preview")
-        self.assertEqual(wells, 3)
-        app._refresh_history_view(force=True)
-        app.update()
-        widgets = list(app._iter_widgets(app._history_entries_frame))
-        btn_texts = [w.cget("text") for w in widgets
-                     if isinstance(w, ctk.CTkButton)]
-        self.assertEqual(btn_texts.count("Re-download"), 5)
-
-    def test_deferred_refresh_fires_once_after_rapid_tab_hops(self):
-        """show_frame('history') defers the rebuild instead of painting twice.
-
-        The flicker came from show_frame forcing a paint and then
-        synchronously destroying + rebuilding every history widget in the
-        same event cycle (old tiles, then empty, then new tiles). The refresh
-        must be deferred via a short after() timer so Tk coalesces it into
-        the next frame, and rapid tab hops must coalesce to a single rebuild:
-        each visit cancels the previous pending one. (A plain after(0) does
-        NOT coalesce: show_frame's own update_idletasks services after-idle
-        callbacks, so the first refresh would fire while hopping away and
-        rebuild the grid off-screen.)
-        """
-        app = type(self).app
-        # Ensure the page is already built: the first-ever visit runs a
-        # synchronous build-time refresh inside build_history_view, which
-        # would count as an extra fire and mask the coalescing under test.
-        app.show_frame("history")
-        app.update()
-        app.show_frame("downloader")
-        app.update()
-        try:
-            pending = getattr(app, "_history_refresh_after", None)
-            if pending:
-                try:
-                    app.after_cancel(pending)
-                except Exception:
-                    pass
-                app._history_refresh_after = None
-            app.after(50)  # let any in-flight timer elapse
-            app.update()
-        except Exception:
-            pass
-        # Patch at CLASS level: _schedule_history_refresh binds
-        # self._refresh_history_view at schedule time, so an instance
-        # attribute set afterwards would never be seen by the callback.
-        cls = type(app)
-        orig = cls._refresh_history_view
-        fired = []
-        cls._refresh_history_view = lambda self_, *a, **k: (
-            fired.append(1), orig(self_, *a, **k))[1]
-        try:
-            # Rapid hops inside ONE event cycle: no update() in between, so
-            # each visit must cancel the previous pending refresh rather
-            # than stacking. (Pumping mid-sequence would legitimately fire
-            # the first one - that is a settled frame, not flicker.)
-            app.show_frame("history")
-            app.show_frame("downloader")
-            app.show_frame("history")
-            # The rebuild is asynchronous (worker read + main-thread
-            # render), so wait for it to actually land rather than
-            # guessing with a fixed number of update() calls.
-            idle = _pump_until_history_idle(app)
-        finally:
-            cls._refresh_history_view = orig
-        self.assertTrue(idle, "history refresh never settled")
-        self.assertEqual(len(fired), 1,
-                         "rapid tab hops should coalesce to a single "
-                         "deferred history rebuild")
-
-    def test_refresh_requested_during_an_in_flight_read_is_not_dropped(self):
-        """A refresh asked for mid-read must still happen.
-
-        The tab switch reads history on a worker thread. If the user
-        hops away and back while that read is in flight, the second
-        request used to be dropped: the worker saw itself as superseded
-        and discarded its payload, and the new request had already
-        returned - so nothing rendered at all and the page kept whatever
-        stale view it had.
-
-        The in-flight worker must chain a fresh read instead. The race is
-        reproduced deterministically here by blocking the real worker
-        read so the second request provably lands mid-read.
-        """
-        app = type(self).app
-        app.show_frame("history")
-        app.update()
-        self.assertTrue(
-            _pump_until_history_idle(app, require_new_read=False),
-            "history read never settled to start with")
-
-        cls = type(app)
-        started = threading.Event()
-        release = threading.Event()
-        orig_entries = cls._history_entries
-        reads = []
-
-        def _blocking_entries(self_):
-            # First read blocks until the test releases it; the read
-            # queued during the block goes through untouched.
-            reads.append(1)
-            if len(reads) == 1:
-                started.set()
-                release.wait(10.0)
-            return orig_entries(self_)
-
-        orig_view = cls._refresh_history_view
-        renders = []
-        cls._history_entries = _blocking_entries
-        cls._refresh_history_view = lambda self_, *a, **k: (
-            renders.append(1), orig_view(self_, *a, **k))[1]
-        try:
-            app._refresh_history_async()
-            self.assertTrue(
-                started.wait(10.0), "the worker read never started")
-            # The read is in flight: this request must be recorded, not
-            # dropped.
-            app._refresh_history_async()
-            self.assertTrue(
-                getattr(app, "_history_read_again", False),
-                "a refresh requested during an in-flight read was dropped")
-            release.set()
-            self.assertTrue(_pump_until_history_idle(app),
-                            "the chained read never settled")
-        finally:
-            release.set()
-            cls._history_entries = orig_entries
-            cls._refresh_history_view = orig_view
-        self.assertGreaterEqual(
-            len(reads), 2,
-            "the follow-up read should have been started, not dropped")
-        self.assertGreaterEqual(
-            len(renders), 1,
-            "the history view should have been rebuilt")
-
-    def test_a_read_in_flight_when_the_hop_starts_does_not_render_twice(self):
-        """A read from BEFORE the tab hop must not add a second rebuild.
-
-        The deferred refresh coalesces rapid hops into one rebuild, but a
-        worker read that was already in flight when the hop happened
-        used to land afterwards and render a second time - two rebuilds
-        where the user expects one. The hop invalidates that stale read;
-        the timer then does the single rebuild.
-        """
-        app = type(self).app
-        app.show_frame("history")
-        app.update()
-        self.assertTrue(
-            _pump_until_history_idle(app, require_new_read=False),
-            "history read never settled to start with")
-        # Drop any deferred timer still queued by the visit above: the
-        # blocking read below must be the one this test starts.
-        pending_timer = getattr(app, "_history_refresh_after", None)
-        if pending_timer:
-            try:
-                app.after_cancel(pending_timer)
-            except Exception:
-                pass
-            app._history_refresh_after = None
-
-        cls = type(app)
-        started = threading.Event()
-        release = threading.Event()
-        orig_entries = cls._history_entries
-        orig_view = cls._refresh_history_view
-        reads = []
-        renders = []
-
-        def _blocking_entries(self_):
-            reads.append(1)
-            if len(reads) == 1:
-                started.set()
-                release.wait(10.0)
-            return orig_entries(self_)
-
-        cls._history_entries = _blocking_entries
-        cls._refresh_history_view = lambda self_, *a, **k: (
-            renders.append(1), orig_view(self_, *a, **k))[1]
-        try:
-            # A read is now in flight on the worker thread.
-            app._refresh_history_async()
-            self.assertTrue(
-                started.wait(10.0), "the worker read never started")
-            # The user hops back to the history tab. The in-flight read
-            # belongs to the previous visit: it must NOT render, or the
-            # deferred refresh renders on top of it and the page is
-            # rebuilt twice.
-            app.show_frame("history")
-            # Cancel the deferred timer so the stale read is the only
-            # thing that can land: without the invalidation it would
-            # render here (and the timer would add a second rebuild).
-            timer = getattr(app, "_history_refresh_after", None)
-            if timer:
-                try:
-                    app.after_cancel(timer)
-                except Exception:
-                    pass
-                app._history_refresh_after = None
-            release.set()
-            self.assertTrue(
-                _pump_until_history_idle(app, require_new_read=False),
-                "the stale read never settled")
-            self.assertEqual(
-                len(renders), 0,
-                "the stale pre-hop read rendered; the page would be "
-                "rebuilt twice")
-            # The deferred refresh still rebuilds the page - exactly once.
-            app._schedule_history_refresh()
-            self.assertTrue(
-                _pump_until_history_idle(app),
-                "the deferred read never settled")
-        finally:
-            release.set()
-            cls._history_entries = orig_entries
-            cls._refresh_history_view = orig_view
-        self.assertEqual(
-            len(renders), 1,
-            "the deferred refresh should rebuild the page exactly once")
-
-    def test_the_toggle_offers_both_views_and_list_is_the_default(self):
-        app = type(self).app
-        orig_pref = app._history_view_pref()
-        self.addCleanup(app._set_pref, "history_view", orig_pref)
-        app._set_pref("history_view", "list")
-        app.show_frame("history")
-        app._refresh_history_view(force=True)
-        app.update()
-        self.assertEqual(app._history_view_pref(), "list")
-        toggle = getattr(app, "history_view_toggle", None)
-        self.assertIsNotNone(toggle, "view toggle missing from history page")
-        assert toggle is not None  # narrows for the type checker
-        self.assertEqual(list(toggle.cget("values")), ["List", "Gallery"])
-
-
-@requires_ctk
-class HistoryGalleryClassifierTests(unittest.TestCase):
-    """The gallery's video/audio decision must survive lying history rows.
-
-    Real download_history.json rows record .mp4 files with is_video false
-    (the direct-download path wrote the wrong flag) and some store a folder
-    as filepath. Deciding from the flag alone gave those videos a text
-    placeholder instead of a poster - the reported bug.
-    """
-
-    @staticmethod
-    def _entry(path, is_video):
-        return {"url": "https://example.invalid/x", "title": "T",
-                "filepath": path, "is_video": is_video}
-
-    @staticmethod
-    def _write(path):
-        with open(path, "wb") as fh:
-            fh.write(b"\x00" * 32)
-
-    @staticmethod
-    def _mixin():
-        # The classifier is instance-backed (folder resolutions cache on
-        # self); a bare instance without __init__ is enough to drive it.
-        return ui.HistoryPageMixin.__new__(ui.HistoryPageMixin)
-
-    def test_an_mp4_with_a_false_flag_is_still_a_video(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            p = os.path.join(tmp, "clip.mp4")
-            self._write(p)
-            e = self._entry(p, False)
-            m = self._mixin()
-            self.assertEqual(m._entry_video_kind(e),
-                             "video")
-            self.assertEqual(m._entry_video_path(e), p)
-
-    def test_an_mp3_is_audio_even_with_a_poisoned_true_flag(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            p = os.path.join(tmp, "song.mp3")
-            self._write(p)
-            e = self._entry(p, True)
-            m = self._mixin()
-            self.assertEqual(m._entry_video_kind(e),
-                             "audio")
-            self.assertIsNone(m._entry_video_path(e))
-            self.assertEqual(m._entry_audio_path(e), p)
-
-    def test_a_missing_mp3_has_no_audio_path_for_its_placeholder(self):
-        e = self._entry("/gone/nowhere.mp3", False)
-        m = self._mixin()
-        self.assertIsNone(m._entry_audio_path(e))
-        self.assertEqual(m._entry_video_kind(e), "audio")
-
-    def test_a_folder_filepath_resolves_to_the_media_inside(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            p = os.path.join(tmp, "clip.mp4")
-            self._write(p)
-            e = self._entry(tmp, False)   # history stored the FOLDER
-            m = self._mixin()
-            self.assertEqual(m._entry_video_kind(e),
-                             "video")
-            self.assertEqual(m._entry_video_path(e), p)
-
-    def test_a_missing_video_still_reads_as_video_for_the_placeholder(self):
-        # _entry_video_path is None (no frame to grab) but the kind still
-        # says video, so the placeholder reads "Video", not "Audio".
-        e = self._entry("/gone/nowhere.mp4", False)
-        m = self._mixin()
-        self.assertIsNone(m._entry_video_path(e))
-        self.assertEqual(m._entry_video_kind(e), "video")
 
 
 if __name__ == "__main__":

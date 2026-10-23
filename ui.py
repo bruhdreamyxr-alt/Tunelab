@@ -82,7 +82,6 @@ def _lazy_import_vlc() -> Any:
 
 # Helper for faster PySceneDetect execution in a separate process to avoid GIL/GUI freezes
 ctk.set_appearance_mode("Dark")
-ctk.set_widget_scaling(1.0)
 ctk.set_default_color_theme("blue")
 
 
@@ -133,17 +132,6 @@ from ui_widgets import (  # noqa: E402  (after the ctk import)
     UiSplitsMixin,
     hide_scrollbar_until_hover,
 )
-# 2026 overhaul scaffolding (tokens + primitives + shell + motion). Imported so
-# ui.<name> resolves; not yet wired into the live layout (Phase 4+).
-try:
-    import ui_components  # noqa: E402
-    import ui_layout  # noqa: E402
-    import ui_motion  # noqa: E402
-except Exception:  # pragma: no cover
-    ui_components = None
-    ui_layout = None
-    ui_motion = None
-
 
 from pages.history import HistoryPageMixin  # noqa: E402
 from pages.queue import QueuePageMixin  # noqa: E402
@@ -229,9 +217,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             # engine card's checkbox writes it, the startup probe reads
             # it (packaged builds only). Declared for the same reason.
             "engine_auto_update": True,
-            # History page view mode: 'list' (default) or 'gallery'.
-            # Written by the List/Gallery toggle; declared so the choice
-            # survives a restart.
+            # History tab view choice ("list" or "gallery") - the history
+            # page writes it when the user toggles view mode. Declared so
+            # _load_prefs keeps it across launches.
             "history_view": "list",
         }
 
@@ -547,24 +535,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._unfocused_done: int = 0
         self._queue_refresh_pending: bool = False
         self._history_view_sig: Any = None
-        # Async-history state: the refresh splits into a worker read plus a
-        # main-thread render, so a tab switch never blocks on disk. The
-        # generation counter drops stale callbacks: hopping away and back
-        # starts a new read, and the old worker's result is discarded when
-        # it lands (its after() was already serviced by the event loop).
-        self._history_read_gen: int = 0
-        # Bumped only when a read ACTUALLY starts (not when a stale one is
-        # invalidated). The generation counter moves in both cases, so a
-        # waiter that wants to know "did a new read begin?" has to look at
-        # this one instead - an invalidation must not look like a read.
-        self._history_read_epoch: int = 0
-        self._history_read_pending: bool = False
-        # Set when a refresh is requested while a read is already in
-        # flight. The in-flight worker chains a fresh read when it lands,
-        # so the newest request is never dropped (which left the page
-        # stale after hopping away and back mid-read).
-        self._history_read_again: bool = False
-        self._history_read_again_force: bool = False
         # Last URL/mode started, so a failed download's dialog can offer
         # "Try again" without the user re-pasting the link.
         self._last_dl_url: str = ""
@@ -728,6 +698,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # stays off unless it was asked for.
         self._sb_peek_pref = bool(self._prefs.get('sidebar_peek_on_hover', False))
 
+        # Downloader builds now; the rest build on first visit (see show_frame
+        # and _ensure_page_built). Building everything up front cost ~1-1.5s of
+        # the ~2.8s construct for pages the user may never open.
+        self._built_pages: set = set()
+        self.build_downloader_view()
+        self._built_pages.add('downloader')
+
+        # -----------------
+        # Rail contents (brand, grouped nav rows, badge slots, footer toggle)
+        # -----------------
+
         # Saved download settings (#1 save folder, #2 audio format).
         try:
             _saved_folder = str(self._prefs.get('save_folder', '') or '').strip()
@@ -736,13 +717,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             downloader.set_audio_format(str(self._prefs.get('audio_format', 'mp3_vbr')))
         except Exception:
             logger.debug("Applying download prefs failed", exc_info=True)
-
-        # Downloader builds now; the rest build on first visit (see show_frame
-        # and _ensure_page_built). Building everything up front cost ~1-1.5s of
-        # the ~2.8s construct for pages the user may never open.
-        self._built_pages: set = set()
-        self.build_downloader_view()
-        self._built_pages.add('downloader')
 
         # Apply saved performance prefs at startup so the "fast downloader"
         # settings survive restarts and are active before the user opens the
@@ -918,45 +892,34 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         self._url_clear_btn_visible = False
 
-        # Row 1: a mode toggle plus one primary Download button, instead of
-        # two separate fills competing for attention.
-        # fill="x" so the row spans the window width and its buttons are never
-        # pushed past the right edge on narrow windows.
+        # Row 1: the two download actions side by side (they used to be two
+        # more stacked full-width rows). MP3 is the screen's one accent.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        action_row.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
+        action_row.pack(pady=(0, UITheme.RHYTHM))
 
-        self.dl_mode_var = ctk.StringVar(value="audio")
-        self.dl_mode_toggle = ctk.CTkSegmentedButton(
-            action_row, values=["Audio", "Video"],
-            variable=self.dl_mode_var, width=100, height=UITheme.H_LG,
-        )
-        self.dl_mode_toggle.pack(side="left")
-        self._style_option_menu(self.dl_mode_toggle)
-
-        self.btn_download = ctk.CTkButton(
+        self.btn_download_mp3 = ctk.CTkButton(
             action_row,
-            text="Download",
-            width=170, height=UITheme.H_LG,
+            text="Download Audio (MP3)",
+            width=200, height=UITheme.H_LG,
             cursor="hand2",
-            command=self._start_download,
+            command=lambda: self._start_worker(self.download_mp3)
         )
-        self.btn_download.pack(side="left", padx=(10, 0))
-        self._style_button(self.btn_download, "primary", icon="download")
+        self.btn_download_mp3.pack(side="left", padx=6)
+        self._style_button(self.btn_download_mp3, "primary")
 
-        self.btn_download.bind("<Enter>",
-                               lambda e: self._set_hover_detail(
-                                   "Download with the selected format "
-                                   "(audio or video).", "#ecf0f1"))
-        self.btn_download.bind("<Leave>",
-                               lambda e: self._restore_hover_detail())
+        self.btn_download_mp4 = ctk.CTkButton(
+            action_row,
+            text="Download Video (MP4)",
+            width=200, height=UITheme.H_LG,
+            cursor="hand2",
+            command=lambda: self._start_worker(self.download_mp4)
+        )
+        self.btn_download_mp4.pack(side="left", padx=6)
+        self._style_button(self.btn_download_mp4, "secondary")
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
-        # Starts hidden - previews only make sense once a URL is pasted, so the
-        # row stays out of sight until then instead of claiming permanent space.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        preview_frame.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
-        preview_frame.pack_forget()
-        self._preview_frame = preview_frame
+        preview_frame.pack(pady=(0, UITheme.RHYTHM))
 
         self.btn_preview_audio = ctk.CTkButton(
             preview_frame,
@@ -1018,6 +981,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.bind(
             "<<Paste>>", lambda e: self.after(1, self._sync_clear_btn)
         )
+        self.btn_download_mp3.bind("<Enter>", lambda e: self._set_hover_detail("Download MP3 with artwork and metadata.", "#ecf0f1"))
+        self.btn_download_mp3.bind("<Leave>", lambda e: self._restore_hover_detail())
+        self.btn_download_mp4.bind("<Enter>", lambda e: self._set_hover_detail("Download high quality MP4 video.", "#ecf0f1"))
+        self.btn_download_mp4.bind("<Leave>", lambda e: self._restore_hover_detail())
         self.btn_preview_audio.bind("<Enter>", lambda e: self._set_hover_detail("Listen to a quick 30s audio preview.", "#ecf0f1"))
         self.btn_preview_audio.bind("<Leave>", lambda e: self._restore_hover_detail())
         self.btn_preview_video.bind("<Enter>", lambda e: self._set_hover_detail("Preview video in the stream player.", "#ecf0f1"))
@@ -1062,7 +1029,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # the moment a download starts and goes away again when it ends.
         self._progress_row = progress_row = ctk.CTkFrame(
             self.tab_downloader, fg_color="transparent")
-        progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM * 2))
+        progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
         self.progress_bar = ctk.CTkProgressBar(progress_row, width=200)
         self.progress_bar.set(0)
         self.progress_bar.pack(side="left", fill="x", expand=True)
@@ -1078,18 +1045,16 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._style_button(self.btn_cancel_download, "danger", icon="stop")
         progress_row.pack_forget()
 
-        self.dl_detail = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
+        self.dl_detail = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#95a5a6")
         self._pack_h_if_used(self.dl_detail, pady=(0, UITheme.RHYTHM // 2))
 
         # Speed + ETA label below progress bar
-        self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
+        self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#7f8c8d")
         self._pack_h_if_used(self.dl_speed_lbl, pady=(0, UITheme.RHYTHM))
 
         # Row: save folder + audio quality side by side (was two stacked rows).
         settings_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        settings_row.pack(anchor="center", pady=(0, UITheme.RHYTHM * 2))
+        settings_row.pack(pady=(0, UITheme.RHYTHM))
         self.btn_choose_folder = ctk.CTkButton(
             settings_row,
             text="Change Save Folder",
@@ -1118,7 +1083,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self.tab_downloader,
             text="",
             font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            text_color="#95a5a6",
             wraplength=340,
             justify="center",
         )
@@ -1150,7 +1115,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # --- Queue + Tag Editor controls ---
         controls_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        controls_row.pack(anchor="center", pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
+        controls_row.pack(pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
 
         self.btn_add_to_queue = ctk.CTkButton(
             controls_row, text="➕ Add to Queue", width=130, height=UITheme.H_SM,
@@ -1254,25 +1219,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self.btn_clear_url.place_forget()
         except Exception:
             pass
-        self._toggle_preview_visibility()
-
-    def _toggle_preview_visibility(self):
-        """Show the preview row only when the URL box has text.
-
-        Previews need a URL to work, so the row stays hidden on a fresh
-        launch instead of claiming permanent screen space. Shown the moment
-        the user pastes or types something, hidden again when the box is
-        cleared.
-        """
-        try:
-            has_text = bool(self.url_entry.get().strip())
-            if has_text and not self._preview_frame.winfo_manager():
-                self._preview_frame.pack(fill="x", padx=UITheme.PAD_X,
-                                         pady=(0, UITheme.RHYTHM))
-            elif not has_text and self._preview_frame.winfo_manager():
-                self._preview_frame.pack_forget()
-        except Exception:
-            pass
 
     def _clear_url_entry(self, _event=None):
         """Escape (and the ✕ button) empty the URL box; keep focus in it."""
@@ -1333,7 +1279,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         buttons do. Returns "break" so Tk doesn't beep or move focus.
         """
         try:
-            if str(self.btn_download.cget("state")) == "disabled":
+            if str(self.btn_download_mp3.cget("state")) == "disabled":
                 # A direct download is running (the buttons are disabled
                 # while it is); mirror the buttons instead of racing it.
                 return "break"
@@ -1405,13 +1351,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         The system boxes are gray OS chrome: they ignore the active palette,
         squeeze a multi-line yt-dlp failure into one clipped line, and give no
         way to copy the error text. This dialog uses the current theme, wraps
-        the message, shows technical detail in a separate muted block, and can
-        offer one secondary action (e.g. Try again). Every error dialog also
-        gets a copy button - "Copy error text" - even when the call site
-        passed the whole failure as the message with no detail block, because
-        "paste the error into a bug report" is the first thing debugging asks
-        for. Other kinds only show "Copy details" when there is technical
-        detail to copy.
+        the message, shows technical detail in a separate muted block with a
+        Copy button, and can offer one secondary action (e.g. Try again).
 
         Same ``(title, message)`` shape as messagebox so call sites stay
         readable. Returns the Toplevel (mostly for tests); nothing blocks.
@@ -1453,18 +1394,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                      justify="left").pack(anchor="w")
 
         detail = "" if detail is None else str(detail).strip()
-        # Full copyable text: the headline plus the uncapped technical detail,
-        # never the on-screen preview. Error dialogs offer it even when the
-        # call site passed everything as the message (no detail block).
-        copy_text = "\n\n".join(p for p in (message, detail) if p)
         if detail:
             lines = detail.splitlines()
             # Cap what is displayed: a 40-line yt-dlp traceback would otherwise
-            # push the buttons off the screen. The Copy button always copies
-            # the complete text, never the truncated preview.
+            # push the buttons off the screen. "Copy details" always copies the
+            # complete text, never the truncated preview.
             if len(lines) > 8:
                 shown = "\n".join(lines[:8]) + \
-                    f"\n… plus {len(lines) - 8} more lines — use Copy to get all"
+                    f"\n… plus {len(lines) - 8} more lines — use Copy details"
             else:
                 shown = detail
             box = ctk.CTkFrame(body, fg_color=field_bg,
@@ -1497,17 +1434,15 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                       font=UITheme.F(12, "bold"),
                       command=_close).pack(side="right")
 
-        if copy_text and (detail or kind == "error"):
+        if detail:
             def _copy():
                 try:
                     dlg.clipboard_clear()
-                    dlg.clipboard_append(copy_text)
+                    dlg.clipboard_append(detail)
                 except Exception:
-                    logger.exception("Could not copy dialog text")
+                    logger.exception("Could not copy dialog detail")
 
-            copy_label = ("Copy error text" if kind == "error"
-                          else "Copy details")
-            ctk.CTkButton(row, text=copy_label, width=130, height=UITheme.H_LG,
+            ctk.CTkButton(row, text="Copy details", width=112, height=UITheme.H_LG,
                           corner_radius=UITheme.RADIUS_MD,
                           fg_color="transparent", border_width=UITheme.BORDER_W,
                           border_color=pal.get("hover", sub), text_color=sub,
@@ -1814,14 +1749,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         os._exit(0)
 
 
-    def _start_download(self):
-        """Route to audio or video download per the mode toggle."""
-        mode = self.dl_mode_var.get()
-        if mode == "video":
-            self.download_mp4()
-        else:
-            self.download_mp3()
-
     def download_mp3(self):
         url = self.url_entry.get().strip()
         if not url:
@@ -1908,7 +1835,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         try:
             # set_download_buttons_state(False) disables these for the whole
             # duration of a direct download, so their state is the flag.
-            return str(self.btn_download.cget("state")) == "disabled"
+            return str(self.btn_download_mp3.cget("state")) == "disabled"
         except Exception:
             return False
 
@@ -2152,7 +2079,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def set_download_buttons_state(self, enabled: bool):
         state = "normal" if enabled else "disabled"
-        self.after(0, lambda: self.btn_download.configure(state=state))
+        self.after(0, lambda: self.btn_download_mp3.configure(state=state))
+        self.after(0, lambda: self.btn_download_mp4.configure(state=state))
         # The cancel button mirrors the inverse state of the download buttons.
         cancel_state = "disabled" if enabled else "normal"
         self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
@@ -2387,8 +2315,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     def build_studio_view(self):
         self.file_frame = ctk.CTkFrame(self.tab_studio, fg_color="transparent")
         self.file_frame.pack(pady=(12,4), padx=20, fill="x")
-        self.file_lbl = ctk.CTkLabel(self.file_frame, text="Load a music file...", font=UITheme.F(12, "italic"),
-                                     text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
+        self.file_lbl = ctk.CTkLabel(self.file_frame, text="Load a music file...", font=UITheme.F(12, "italic"), text_color="#95a5a6")
         self.file_lbl.pack(side="left", padx=10, pady=10)
         self.btn_browse_studio = ctk.CTkButton(
             self.file_frame, text="Browse Audio", width=100,
@@ -2475,8 +2402,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         ctk.CTkLabel(
             theme_card,
             text="Light/Dark follows the palette you pick here.",
-            font=UITheme.F(10), anchor="w",
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            font=UITheme.F(10), anchor="w", text_color="#95a5a6",
         ).pack(fill="x", padx=16, pady=(0, 12))
 
         self._build_custom_theme_card()
@@ -2507,9 +2433,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         ctk.CTkLabel(
             rail_card,
             text="Ctrl+B, or the row at the bottom of the rail, collapses it any time.",
-            font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            anchor="w",
+            font=UITheme.F(11), text_color="#95a5a6", anchor="w",
             wraplength=560, justify="left").pack(anchor="w", padx=16, pady=(0, 4))
 
         self.sb_peek_var = tk.BooleanVar(value=bool(self._sb_peek_pref))
@@ -2522,9 +2446,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             text="Off by default — a rail that opens itself every time the pointer "
                  "crosses it gets in the way. When on, only the icon column arms "
                  "it, nothing moves but the width, and it closes as you leave.",
-            font=UITheme.F(11),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            anchor="w",
+            font=UITheme.F(11), text_color="#95a5a6", anchor="w",
             wraplength=560, justify="left").pack(anchor="w", padx=16, pady=(0, 4))
 
         self.nav_anim_var = tk.BooleanVar(value=bool(self.nav_anim_enabled))
@@ -2543,9 +2465,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.nav_anim_speed_slider.pack(padx=16, pady=(0, 2), fill="x")
         self.nav_anim_speed_lbl = ctk.CTkLabel(
             rail_card, text=f"{int(self.nav_anim_speed)} frames",
-            font=UITheme.F(10),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            anchor="w")
+            font=UITheme.F(10), text_color="#95a5a6", anchor="w")
         self.nav_anim_speed_lbl.pack(anchor="w", padx=16, pady=(0, 12))
 
         self.tab_customization.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -2617,9 +2537,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.aria2_var = tk.BooleanVar(value=_saved_aria)
         self.aria2_chk = ctk.CTkCheckBox(tuning, text="Enable aria2 external downloader", variable=self.aria2_var)
         self.aria2_chk.pack(anchor="w", padx=16, pady=(4, 0))
-        ctk.CTkLabel(tuning, text="Uses aria2 for parallel connections (faster downloads).", font=UITheme.F(11),
-                     text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-                     wraplength=600, justify="left").pack(anchor="w", padx=16, pady=(0, 2))
+        ctk.CTkLabel(tuning, text="Uses aria2 for parallel connections (faster downloads).", font=UITheme.F(11), text_color="#95a5a6", wraplength=600, justify="left").pack(anchor="w", padx=16, pady=(0, 2))
 
         ctk.CTkLabel(tuning, text="aria2 connections:  (max 16 — aria2 hard limit)", font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(2, 0))
         self.aria2_conn_slider = ctk.CTkSlider(tuning, from_=1, to=16, number_of_steps=15)
@@ -2670,9 +2588,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # control in the Maintenance list. Same reasoning as Clear History.
         self._style_button(self.clear_cache_btn, "ghost", bordered=True, icon="trash")
 
-        self.perf_status = ctk.CTkLabel(maint, text="Current: default", font=UITheme.F(11),
-                                        text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-                                        anchor="w")
+        self.perf_status = ctk.CTkLabel(maint, text="Current: default", font=UITheme.F(11), text_color="#95a5a6", anchor="w")
         self.perf_status.pack(anchor="w", padx=16, pady=(2, 14))
 
     def apply_performance_settings(self):
@@ -2774,12 +2690,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         for opt in ('fg_color', 'hover_color', 'border_color',
                     'text_color', 'progress_color', 'button_color',
                     'button_hover_color', 'label_fg_color',
-                    'label_text_color',
-                    'selected_color', 'unselected_color',
-                    'selected_hover_color', 'unselected_hover_color',
-                    'placeholder_text_color', 'text_color_disabled',
-                    'dropdown_fg_color', 'dropdown_hover_color',
-                    'dropdown_text_color',):
+                    'label_text_color'):
             try:
                 cur = w.cget(opt)
             except Exception:
@@ -2867,13 +2778,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._ensure_page_built(name)
         # Re-clicking the already-active nav button must not remap pages,
         # force repaints, or restart animations — that churn was part of
-        # the residual black-flash on click-through. History is the
-        # exception: its refresh is deferred (see below), so a same-page
-        # revisit still needs to cancel + reschedule, coalescing rapid
-        # hops into one rebuild instead of stacking redundant ones.
+        # the residual black-flash on click-through.
         if name == getattr(self, '_current_page', None):
-            if name == "history":
-                self._schedule_history_refresh()
             return
         pages = self._page_frames
         page_titles = {
@@ -2928,62 +2834,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._set_active_nav(name)
         self._current_page = name
 
-        # Refresh dynamic tabs when they become visible. History defers to a
-        # short timer: show_frame already forced a paint above, and a
-        # synchronous destroy + rebuild of every history widget here would be
-        # a second paint of an intermediate state (old tiles, then empty,
-        # then new tiles) - the flicker seen on this tab. Deferred, Tk
-        # coalesces the rebuild into the next frame. Any already-queued
-        # deferred refresh is cancelled first so rapid tab-hopping does not
-        # stack up redundant rebuilds. The timer (not after(0)) matters:
-        # show_frame calls update_idletasks mid-switch and Tk services
-        # after(0)/after-idle callbacks there, so an after(0) refresh would
-        # fire while hopping AWAY and rebuild the grid off-screen.
+        # Refresh dynamic tabs when they become visible
         if name == "history":
-            self._schedule_history_refresh()
+            self._refresh_history_view()
         elif name == "queue":
             self._refresh_queue_tab()
-
-    def _schedule_history_refresh(self):
-        """Queue a deferred history rebuild, cancelling any pending one.
-
-        Uses a short timer (not after(0)): show_frame itself calls
-        update_idletasks mid-switch, and Tk services after(0)/after-idle
-        callbacks there - so an after(0) refresh scheduled on the way to
-        History would fire while hopping AWAY again, rebuilding the grid
-        off-screen and defeating the coalescing. A real timer only fires
-        on a full event-loop pump, so rapid tab hops cancel down to one.
-
-        The timer fires _refresh_history_async, which reads SQLite/JSON on
-        a worker thread and renders on the main thread: the tab switch
-        itself never blocks on disk.
-        """
-        try:
-            pending = getattr(self, "_history_refresh_after", None)
-            if pending:
-                self.after_cancel(pending)
-        except Exception:
-            pass
-        # A read from an earlier visit may still be in flight. Its payload
-        # would land after this visit's rebuild and render a second time -
-        # two rebuilds where the user (and the coalescing test) expects
-        # one. Invalidate it here: the timer below starts a fresh read that
-        # renders exactly once. (The stale worker still clears the
-        # in-flight flag and chains if it was asked to, so no request is
-        # dropped.)
-        try:
-            self._history_read_gen = int(
-                getattr(self, "_history_read_gen", 0)) + 1
-        except Exception:
-            try:
-                self._history_read_gen = 1
-            except Exception:
-                pass
-        try:
-            self._history_refresh_after = self.after(
-                15, self._refresh_history_async)
-        except Exception:
-            self._refresh_history_async()
 
     def _set_active_nav(self, active_name: str):
         # Skip entirely when nothing changed: a repaint redraws every row
@@ -3257,22 +3112,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         tx = ctk.CTkLabel(row, text=label, font=UITheme.F(12), anchor="w",
                           cursor="hand2", height=UITheme.SB_ROW_H - 2)
         tx.place(x=UITheme.SB_TEXT_X, y=1)
-        # Shortcut slot: a subtle keycap badge (low-opacity fill, muted ink)
-        # instead of a bare digit. Shortcuts only; live badges go elsewhere.
-        shortcut = self._SB_KEYS.get(name, "")
-        hint = None
-        if shortcut:
-            keycap = ctk.CTkLabel(
-                row, text=shortcut, font=UITheme.F(9, "bold"),
-                width=22, height=18, corner_radius=9,
-                fg_color=UITheme.BORDER_SOFT,
-                text_color=(getattr(self, "_palette", {}) or {}).get(
-                    "sub", "#8a94a6"),
-            )
-            setattr(keycap, "_theme_roles",
-                    {"fg_color": "surface", "text_color": "sub"})
-            keycap.place(x=UITheme.SB_HINT_X, y=(UITheme.SB_ROW_H - 18) // 2)
-            hint = keycap
+        hint = ctk.CTkLabel(row, text=self._SB_KEYS.get(name, ""),
+                            width=22, height=18, corner_radius=9,
+                            font=UITheme.F(9, "bold"))
+        hint.place(x=UITheme.SB_HINT_X, y=(UITheme.SB_ROW_H - 18) // 2)
 
         self._sb_bind_clickable(
             row, (ic, tx, hint), lambda e, n=name: self.show_frame(n),
@@ -3289,8 +3132,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         setattr(row, "_nav_name", name)
         for widget in (row, ic, tx, hint):
-            if widget is None:
-                continue
             try:
                 # No add="+": CustomTkinter's bind() takes a bool and always
                 # binds additively onto its internal widgets, so passing the
@@ -3697,8 +3538,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self._sb_texts[name].configure(text_color=label_c)
             except Exception:
                 logger.debug("nav row %r repaint failed", name, exc_info=True)
-            self._repaint_nav_hint(name, base, accent, text_c, sub_c,
-                                   fill=fill)
+            self._repaint_nav_hint(name, base, accent, text_c, sub_c)
 
         # Brand tile, footer chip, hairline, section headers.
         try:
@@ -3728,25 +3568,19 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         for hdr in getattr(self, '_sb_headers', []):
             try:
-                # Readable secondary on every background: let _on_color pick
-                # text_c (dark on light, light on dark) over sub_c so the
-                # section banners always clear 4.5:1.
-                hdr.configure(text_color=_on_color(base, text_c, sub_c))
+                hdr.configure(text_color=_mix(base, sub_c, 0.9))
             except Exception:
                 pass
 
     def _repaint_nav_hint(self, name, base: Optional[str] = None,
                           accent: Optional[str] = None,
                           text_c: Optional[str] = None,
-                          sub_c: Optional[str] = None,
-                          fill: Optional[str] = None):
+                          sub_c: Optional[str] = None):
         """Right slot: an accent badge while a count is set, else the digit.
 
-        ``fill`` is the row's *current* chip fill (sidebar or accent-tint on an
-        active/hovered row). The slot is transparent, so the digit sits on
-        that fill: its ink must be chosen against *fill*, not against the raw
-        sidebar, otherwise an accent-tinted chip on a dark palette puts a muted
-        sub tone below 4.5:1 (Serika Dark: sub #a9aaad on active_fill #4d472c).
+        Takes the already-mixed colors when _repaint_nav_rows is looping (so
+        the palette is read once), and can be called with just a name from
+        _set_nav_badge when a count changes on its own.
         """
         lbl = getattr(self, '_sb_hints', {}).get(name)
         if lbl is None:
@@ -3764,8 +3598,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         accent = accent or UITheme.COLOR_PRIMARY
         text_c = text_c or '#ecf0f1'
         sub_c = sub_c or UITheme.COLOR_GRAY
-        if fill is None:
-            fill = base
         count = getattr(self, '_sb_badges', {}).get(name) or 0
         try:
             if count:
@@ -3775,12 +3607,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     text_color=_on_color(accent, text_c, base),
                     border_width=0)
             else:
-                # Digit inherits the row's chip fill. Pick ink against that
-                # actual fill so the shortcut stays readable on an active row.
-                on_fill = _on_color(fill, sub_c, text_c)
                 lbl.configure(text=self._SB_KEYS.get(name, ""),
-                              fg_color="transparent",
-                              text_color=on_fill)
+                              fg_color="transparent", text_color=sub_c)
         except Exception:
             pass
 
@@ -4542,7 +4370,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
         accent_hover = pal.get("accent_hover", "#2980b9")
         text = pal.get("text", "#ecf0f1")
-        sub = pal.get("sub", UITheme.COLOR_GRAY)
         # The unchecked ring has to be *seen*: the palette's hover tone is a
         # surface step, too close to the page on the light themes, so the
         # ring uses the muted text tone instead.
@@ -4553,14 +4380,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # The checkmark is drawn *on* the accent, so it is chosen for contrast
         # (a palette text tone would vanish into a yellow or cyan accent).
         on_accent = _on_color(accent, text, pal.get("bg", "#1e1e24"))
-        # Field fill. An entry is a flat panel, so it borrows the page's own
-        # background: a window-tone box reads as a field without needing a
-        # different shade that every palette has to tune by hand.
-        field = pal.get("bg", UITheme.SURFACE_BG)
-        # Selected/unselected ink for segmented buttons: the selected segment
-        # is the accent, the rest stays on the sidebar so the control sits in
-        # its own row rather than jumping forward.
-        seg_unsel = pal.get("sidebar", "#1b2532")
         recipes = (
             (ctk.CTkCheckBox, {"fg_color": accent, "hover_color": accent_hover,
                                "border_color": edge,
@@ -4570,40 +4389,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                              "button_hover_color": accent_hover}),
             (ctk.CTkProgressBar, {"fg_color": trough, "progress_color": accent,
                                   "border_color": trough}),
-            # CTkEntry: flat field, palette text, hover-toned hairline.
-            (ctk.CTkEntry, {"fg_color": field, "text_color": text,
-                            "placeholder_text_color": sub,
-                            "border_color": pal.get("hover", UITheme.SIDEBAR_HOVER),
-                            "border_width": UITheme.BORDER_W,
-                            "corner_radius": UITheme.RADIUS_FIELD}),
-            # CTkSegmentedButton. CTk ships this with a default that makes the
-            # selected and unselected segments the same grey - the toggle then
-            # shows no state at all. Accent on the active segment, sidebar on
-            # the rest, text on the palette text tone which sits above both.
-            (ctk.CTkSegmentedButton, {
-                "fg_color": "transparent",
-                "selected_color": accent,
-                "selected_hover_color": accent_hover,
-                "unselected_color": seg_unsel,
-                "unselected_hover_color": pal.get("hover", "#34495e"),
-                "text_color": text,
-            }),
-            # CTkRadioButton: accent dot, palette ring and text. CTk's default
-            # radio dot is its blue, which is wrong for every non-blue palette.
-            (ctk.CTkRadioButton, {"fg_color": accent,
-                                  "hover_color": accent_hover,
-                                  "border_color": edge,
-                                  "text_color": text}),
-            # CTkComboBox mirrors the option menu recipe exactly so the two
-            # controls are indistinguishable at a glance.
-            (ctk.CTkComboBox, {
-                "fg_color": pal.get("sidebar_active", "#2c3e50"),
-                "text_color": _on_color(pal.get("sidebar_active", "#2c3e50"),
-                                        text, pal.get("bg", "#1e1e24")),
-                "button_color": accent,
-                "button_hover_color": accent_hover,
-                "border_color": pal.get("hover", "#34495e"),
-            }),
         )
         done = 0
         for widget in self._iter_widgets():
