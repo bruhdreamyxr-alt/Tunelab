@@ -164,3 +164,55 @@ class Toast(ctk.CTkFrame):
                      wraplength=320, justify="left").pack(padx=UITheme.SPACE_3,
                                                           pady=UITheme.SPACE_2)
 
+
+class Spinner(ctk.CTkLabel):
+    """A tiny animated loading indicator for long-running actions.
+
+    Rotates a glyph through a fixed sequence so the user knows work is in
+    progress even when there is no deterministic progress bar to show.
+    """
+
+    _FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self, master, palette=None, size=14, **kw):
+        palette = palette or {}
+        super().__init__(
+            master, text=self._FRAMES[0], font=UITheme.F(size, "bold"),
+            text_color=palette.get("accent", UITheme.COLOR_ACCENT),
+            width=size + 4, anchor="center", **kw,
+        )
+        self._palette = palette
+        self._idx = 0
+        self._job = None
+        self._running = False
+
+    def start(self):
+        """Begin the spin animation."""
+        self._running = True
+        self._tick()
+
+    def stop(self):
+        """Stop the spin animation and clear the glyph."""
+        self._running = False
+        if self._job is not None:
+            try:
+                self.after_cancel(self._job)
+            except Exception:
+                pass
+            self._job = None
+        try:
+            self.configure(text="")
+        except Exception:
+            pass
+
+    def _tick(self):
+        if not self._running:
+            return
+        self._idx = (self._idx + 1) % len(self._FRAMES)
+        try:
+            self.configure(text=self._FRAMES[self._idx])
+        except Exception:
+            self._running = False
+            return
+        self._job = self.after(80, self._tick)
+

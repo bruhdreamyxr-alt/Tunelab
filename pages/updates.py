@@ -20,6 +20,7 @@ from typing import Any, Optional
 import customtkinter as ctk
 from ui_theme import UITheme, _mix, _on_color
 from ui_widgets import build_update_banner
+from ui_components import Spinner
 import download_queue
 import downloader
 
@@ -324,6 +325,12 @@ class UpdatesPageMixin:
             wraplength=640, justify="left")
         self.updates_status_lbl.pack(anchor="w", padx=16, pady=(0, 4))
 
+        # Spinner shown while an update check is in flight.
+        _pal = getattr(self, "_palette", {}) or {}
+        self._updates_spinner = Spinner(status, palette=_pal, size=13)
+        self._updates_spinner.pack(anchor="w", padx=(16, 0), pady=(0, 4))
+        self._updates_spinner.stop()
+
         row = ctk.CTkFrame(status, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 8))
         self.updates_check_btn = ctk.CTkButton(
@@ -439,6 +446,7 @@ class UpdatesPageMixin:
         self.updates_check_btn.configure(state="disabled", text="Checking...")
         self.updates_status_lbl.configure(text="Checking for updates...",
                                           text_color="#3498db")
+        self._updates_spinner.start()
 
         def worker():
             release, err = None, None
@@ -457,6 +465,7 @@ class UpdatesPageMixin:
 
         self.updates_check_btn.configure(state="normal",
                                          text="Check for updates")
+        self._updates_spinner.stop()
         self._updates_record_check()
         try:
             self.updates_last_lbl.configure(

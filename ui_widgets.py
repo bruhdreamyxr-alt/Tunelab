@@ -84,9 +84,9 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
         text=f"Update available: {local_ver} → {remote_ver}. Installing "
              f"closes the app and relaunches it.",
         font=UITheme.F(11), anchor="w", justify="left",
-        wraplength=300,
+        wraplength=520,
         text_color=palette.get("text", "#ecf0f1"),
-    ).pack(side="left", fill="x", expand=True)
+    ).pack(side="left", fill="x", expand=True, padx=(0, 8))
 
     later = ctk.CTkButton(body, text="Later", width=70,
                           command=on_later or (lambda: None))
