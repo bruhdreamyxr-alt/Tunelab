@@ -178,7 +178,7 @@ class Spinner(ctk.CTkLabel):
         palette = palette or {}
         super().__init__(
             master, text=self._FRAMES[0], font=UITheme.F(size, "bold"),
-            text_color=palette.get("accent", UITheme.COLOR_ACCENT),
+            text_color=palette.get("accent", UITheme.COLOR_PRIMARY),
             width=size + 4, anchor="center", **kw,
         )
         self._palette = palette
