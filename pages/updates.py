@@ -277,7 +277,14 @@ class UpdatesPageMixin:
     # The Update Center page
     # ------------------------------------------------------------------
     def build_updates_view(self):
-        """Status, actions, the skip state, and the release-notes browser."""
+        """Status, actions, the skip state, and the release-notes browser.
+
+        Guarded so repeated calls (e.g. a failed first build that left
+        _built_pages without 'updates') can never stack duplicate widgets
+        inside tab_updates.
+        """
+        if getattr(self, "updates_check_btn", None) is not None:
+            return
         from version import __version__ as local_ver
 
         # Same scroll-inset reasoning as the Performance page: the scroll
