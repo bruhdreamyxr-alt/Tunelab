@@ -4359,12 +4359,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         card = ctk.CTkFrame(
             parent,
             corner_radius=UITheme.RADIUS_LG,
-            fg_color=pal.get("sidebar", "#1b2532"),
+            fg_color=pal.get("surface", UITheme.SURFACE_BG),
             border_width=1,
             border_color=pal.get("hover", "#34495e"),
         )
         setattr(card, "_theme_roles",
-                {"fg_color": "sidebar", "border_color": "hover"})
+                {"fg_color": "surface", "border_color": "hover"})
         hdr = ctk.CTkLabel(
             card, text=title, font=UITheme.F(13, "bold"), anchor="w",
             text_color=pal.get("text", "#ecf0f1"),
