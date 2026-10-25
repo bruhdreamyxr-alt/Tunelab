@@ -285,14 +285,11 @@ class UpdatesPageMixin:
         """
         if getattr(self, "_updates_view_built", False):
             return
-        if getattr(self, "updates_check_btn", None) is not None:
-            return
-        # Defensive: if tab_updates already holds children from a previous
-        # partial build, don't stack another set on top.
+        # Clear any partial children left by a previous failed build attempt
+        # so we never stack widgets on top of a half-built page.
         try:
-            if self.tab_updates.winfo_children():
-                logger.debug("Updates view already has children; skipping rebuild")
-                return
+            for child in self.tab_updates.winfo_children():
+                child.destroy()
         except Exception:
             pass
         from version import __version__ as local_ver
