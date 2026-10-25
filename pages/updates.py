@@ -283,8 +283,18 @@ class UpdatesPageMixin:
         _built_pages without 'updates') can never stack duplicate widgets
         inside tab_updates.
         """
+        if getattr(self, "_updates_view_built", False):
+            return
         if getattr(self, "updates_check_btn", None) is not None:
             return
+        # Defensive: if tab_updates already holds children from a previous
+        # partial build, don't stack another set on top.
+        try:
+            if self.tab_updates.winfo_children():
+                logger.debug("Updates view already has children; skipping rebuild")
+                return
+        except Exception:
+            pass
         from version import __version__ as local_ver
 
         # Same scroll-inset reasoning as the Performance page: the scroll
@@ -428,6 +438,11 @@ class UpdatesPageMixin:
             "Release notes appear here after every check - the same notes "
             "the update banner shows, kept so they can be re-read.")
         self.updates_notes_box.configure(state="disabled")
+
+        # Mark the view as built so repeated calls (e.g. after a partial
+        # failure that left _built_pages without 'updates') can never stack
+        # duplicate widgets inside tab_updates.
+        self._updates_view_built = True
 
     def _updates_last_checked_text(self) -> str:
         stamp = str((getattr(self, "_prefs", None) or {}).get(
