@@ -4359,12 +4359,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         card = ctk.CTkFrame(
             parent,
             corner_radius=UITheme.RADIUS_LG,
-            fg_color=pal.get("surface", UITheme.SURFACE_BG),
+            fg_color=pal.get("sidebar", "#1b2532"),
             border_width=1,
             border_color=pal.get("hover", "#34495e"),
         )
         setattr(card, "_theme_roles",
-                {"fg_color": "surface", "border_color": "hover"})
+                {"fg_color": "sidebar", "border_color": "hover"})
         hdr = ctk.CTkLabel(
             card, text=title, font=UITheme.F(13, "bold"), anchor="w",
             text_color=pal.get("text", "#ecf0f1"),
@@ -4480,10 +4480,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                         except Exception:
                             fg = None
                         # A well that says "transparent" is showing whatever card
-                        # it sits on, which is the page surface.
+                        # it sits on - cards use the sidebar tone, so the canvas
+                        # must match it or its square corners show behind curved
+                        # card edges when the theme switches.
                         fill = (fg if isinstance(fg, str)
                                 and fg.lower() not in ("transparent", "")
-                                else pal.get("surface", UITheme.SURFACE_BG))
+                                else pal.get("sidebar", UITheme.SIDEBAR_BG))
                     widget._parent_canvas.configure(bg=fill)
                     # The frame itself is a bare tkinter.Frame; CTk repaints it
                     # in the same two lines it uses internally.
