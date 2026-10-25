@@ -369,43 +369,7 @@ class UpdatesPageMixin:
         releases_btn.pack(side="left", padx=(8, 0))
         self._style_button(releases_btn, "secondary")
 
-        # Card 2: the downloader engine. Extractor rot is the operational
-        # risk of this app, so the engine gets the same status + action
-        # treatment the app itself gets - on the one update surface. The
-        # startup probe paints these through guarded setters because this
-        # page is built lazily and the probe can marshal back before
-        # anyone has visited it.
-        engine = self._settings_card(scroll, "Downloader engine (yt-dlp)")
-        engine.pack(fill="x", padx=0, pady=(0, 8))
-        self.ytdlp_update_btn = ctk.CTkButton(
-            engine, text="⮔ Update yt-dlp", width=200, cursor="hand2",
-            command=self.update_ytdlp_clicked,
-        )
-        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(4, 1))
-        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
-        self.ytdlp_ver_lbl = ctk.CTkLabel(
-            engine,
-            text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
-            font=UITheme.F(10),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            anchor="w")
-        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 4))
-
-        # Unattended startup installs: opt-out for packaged builds only
-        # (frozen engine = a user-space copy of yt-dlp.exe that -U rewrites;
-        # the dev environment is never pip-mutated silently, so the toggle
-        # is inert there - see _ytdlp_auto_update_allowed).
-        self.engine_auto_var = tk.BooleanVar(
-            value=bool((getattr(self, "_prefs", None) or {}).get(
-                "engine_auto_update", True)))
-        ctk.CTkCheckBox(
-            engine,
-            text="Update the engine automatically at startup",
-            variable=self.engine_auto_var,
-            command=self._apply_engine_auto_pref,
-        ).pack(anchor="w", padx=16, pady=(0, 12))
-
-        # Card 3: a version the user skipped, with the way back. The skip
+        # Card 2: a version the user skipped, with the way back. The skip
         # button on the banner was otherwise permanent-until-a-newer-release
         # with no way to undo it from inside the app.
         self.updates_skip_card = self._settings_card(scroll, "Skipped update")

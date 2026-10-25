@@ -150,24 +150,27 @@ class SingleUpdateSurfaceTests(unittest.TestCase):
 
 
 class EngineUpdateSurfaceTests(unittest.TestCase):
-    """yt-dlp is the app's engine; its update belongs on the one surface."""
+    """yt-dlp is the app's engine; its update lives on the Performance page."""
 
-    def test_the_engine_card_lives_on_the_update_center_page(self):
-        body = _method_source("build_updates_view")
+    def test_the_engine_card_lives_on_the_performance_page(self):
+        body = _method_source("build_performance_view")
         self.assertIn(
-            'self._settings_card(scroll, "Downloader engine (yt-dlp)")', body)
+            'self._settings_card(maint, "Downloader engine (yt-dlp)")', body)
         self.assertIn("self.ytdlp_update_btn = ctk.CTkButton(", body)
         self.assertIn("command=self.update_ytdlp_clicked", body)
         self.assertIn("self.ytdlp_ver_lbl = ctk.CTkLabel(", body)
 
-    def test_the_performance_page_no_longer_offers_engine_updates(self):
-        # Single surface means all updates: a button buried on the
-        # Performance tab is how a stale engine survived for weeks.
-        body = _method_source("build_performance_view")
+    def test_the_update_center_page_no_longer_offers_engine_updates(self):
+        # Single surface means all updates: the engine card moved out of the
+        # Update Center page so it lives next to the other download-tuning
+        # controls on the Performance tab.
+        body = _method_source("build_updates_view")
         self.assertNotIn("ytdlp_update_btn", body)
         self.assertNotIn("ytdlp_ver_lbl", body)
-        # The maintenance card keeps its non-update action.
-        self.assertIn("clear_cache_btn", body)
+        self.assertNotIn("Downloader engine (yt-dlp)", body)
+        # The check button and install button still live on Update Center.
+        self.assertIn("updates_check_btn", body)
+        self.assertIn("updates_install_btn", body)
 
     def test_the_flows_moved_with_the_widgets(self):
         src = _source()
@@ -241,7 +244,7 @@ class EngineAutoUpdateTests(unittest.TestCase):
         self.assertIn('"engine_auto_update": True', _source())
 
     def test_the_engine_card_offers_the_toggle_and_it_persists(self):
-        body = _method_source("build_updates_view")
+        body = _method_source("build_performance_view")
         self.assertIn("Update the engine automatically at startup", body)
         self.assertIn("command=self._apply_engine_auto_pref", body)
         self.assertIn("self.engine_auto_var = tk.BooleanVar(", body)

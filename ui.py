@@ -2576,13 +2576,43 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         maint = self._settings_card(scroll, "Maintenance")
         maint.pack(fill="x", padx=0, pady=(0, 0))
 
-        # Updates - app and engine alike - live on the Update Center page
-        # (Ctrl+8) only; this card keeps the non-update maintenance action.
+        # Engine (yt-dlp) updater: lives here in Performance so it is next to
+        # the other download-tuning controls, not just on the Update Center page.
+        engine = self._settings_card(maint, "Downloader engine (yt-dlp)")
+        engine.pack(fill="x", padx=0, pady=(8, 0))
+        self.ytdlp_update_btn = ctk.CTkButton(
+            engine, text="⮔ Update yt-dlp", width=200, cursor="hand2",
+            command=self.update_ytdlp_clicked,
+        )
+        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(4, 1))
+        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
+        self.ytdlp_ver_lbl = ctk.CTkLabel(
+            engine,
+            text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
+            font=UITheme.F(10),
+            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
+            anchor="w")
+        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 4))
+
+        # Unattended startup installs: opt-out for packaged builds only
+        # (frozen engine = a user-space copy of yt-dlp.exe that -U rewrites;
+        # the dev environment is never pip-mutated silently, so the toggle
+        # is inert there - see _ytdlp_auto_update_allowed).
+        self.engine_auto_var = tk.BooleanVar(
+            value=bool((getattr(self, "_prefs", None) or {}).get(
+                "engine_auto_update", True)))
+        ctk.CTkCheckBox(
+            engine,
+            text="Update the engine automatically at startup",
+            variable=self.engine_auto_var,
+            command=self._apply_engine_auto_pref,
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+
         self.clear_cache_btn = ctk.CTkButton(
             maint, text="Clear Download Cache", width=260,
             command=self.clear_download_cache,
         )
-        self.clear_cache_btn.pack(anchor="w", padx=16, pady=(0, 2))
+        self.clear_cache_btn.pack(anchor="w", padx=16, pady=(8, 2))
         # Ghost, not a full danger fill: this opens a confirmation dialog and
         # only deletes a rebuildable cache, so it should not be the loudest
         # control in the Maintenance list. Same reasoning as Clear History.
