@@ -2296,7 +2296,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Engine (yt-dlp) updater: lives here in Performance so it is next to
         # the other download-tuning controls, not just on the Update Center page.
         engine = self._settings_card(maint, "Downloader engine (yt-dlp)")
-        engine.pack(fill="x", padx=0, pady=(8, 0))
+        engine.pack(fill="x", padx=0, pady=(8, 8))
         self.ytdlp_update_btn = ctk.CTkButton(
             engine, text="⮔ Update yt-dlp", width=200, cursor="hand2",
             command=self.update_ytdlp_clicked,
