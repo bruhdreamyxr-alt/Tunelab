@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.4 — 2026-10-27
+
+### Fixed
+- Simplified Inno Setup install step in release workflow.
+
 ## 2.9.3 — 2026-10-27
 
 ### Fixed
