@@ -11,9 +11,9 @@ Move the Downloader page out of `ui.py` into `pages/downloader.py` as a
 2. Move self-contained handler groups first (download_mp3, download_mp4,
    cancel, preview, format/folder prefs, retry) into the mixin, leaving
    widget construction in `__init__`. Run full suite.
-3. Move widget construction into `build_downloader_view()` and register it in
-   `_LAZY_PAGES` (currently builds at startup because it is the landing page).
-   Run full suite + `tools/probe_theme_follow.py`.
+3. ~~Move widget construction into `build_downloader_view()` and register it in
+   `_LAZY_PAGES`~~ (deferred — construction is tightly coupled to `__init__`;
+   benefit is low since Downloader is the landing page).
 4. Remove now-unused imports/helpers from `ui.py`; verify `_themed_registry`
    and `_theme_roles` coverage for the new page.
 5. Cleanup pass: dead legacy code, hardcoded fallback colors, `_theme_roles`

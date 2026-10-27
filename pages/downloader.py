@@ -21,7 +21,6 @@ class DownloaderPageMixin:
 
     # Names the shell (or another page) owns: declared so the type checker
     # can see them from here, the convention ui_widgets uses.
-    _bump_completion_badge: Any
     _init_queue_manager: Any
     _last_dl_url: Any
     _last_dl_was_video: Any
@@ -33,10 +32,8 @@ class DownloaderPageMixin:
     _refresh_tag_target: Any
     _set_pref: Any
     _show_error_dialog: Any
-    _show_progress_row: Any
     _start_worker: Any
     _style_button: Any
-    _sync_clear_btn: Any
     _ui_closed: Any
     _unfocused_done: Any
     _url_clear_btn_visible: Any
@@ -58,6 +55,7 @@ class DownloaderPageMixin:
     show_toast: Any
     tab_downloader: Any
     title: Any
+    update_dl_status: Any
     url_entry: Any
 
     def _update_save_folder_label(self):
