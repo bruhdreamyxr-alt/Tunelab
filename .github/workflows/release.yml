@@ -63,7 +63,7 @@ jobs:
           if (-not (Test-Path (Join-Path $cacheDir 'ISCC.exe'))) {
             Write-Host '==> Installing Inno Setup (not in cache)'
             choco install innosetup --no-progress -y
-            }
+            $src = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6'
             New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
             Copy-Item -Path (Join-Path $src '*') -Destination $cacheDir -Recurse -Force
           } else {
@@ -71,7 +71,6 @@ jobs:
           }
           $iscc = Join-Path $cacheDir 'ISCC.exe'
           echo "ISCC_PATH=$iscc" >> $env:GITHUB_ENV
-          Write-Host "ISCC: $iscc"
           Write-Host "ISCC: $iscc"
 
       - name: Build the app, the update ZIP and the installer
