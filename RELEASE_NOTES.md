@@ -1,4 +1,4 @@
-# Release Notes — v2.9.2
+# Release Notes - v2.9.4
 
 ## Added
 - Add-to-Queue (MP3) and (MP4) buttons; queue no longer auto-starts on add.
@@ -15,7 +15,9 @@
 - Queue toolbar split into two rows; bottom padding increased.
 - Tooltips disabled by default for cleaner UI.
 - Engine card spacing in Performance page.
+- Inno Setup install step PowerShell syntax in release workflow.
 
 ## Changed
 - Queue toolbar simplified.
 - Renamed repository to Tunelab.
+- Simplified Inno Setup install step in release workflow.
