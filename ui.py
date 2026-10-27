@@ -1293,6 +1293,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def _add_current_to_queue_video(self):
         """Add the current URL(s) to the queue as video (MP4)."""
+        self.show_toast("Adding video to queue...", "info")
         import time
         now = time.monotonic()
         if getattr(self, "_last_queue_add_at", 0) and now - self._last_queue_add_at < 0.5:
