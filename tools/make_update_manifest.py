@@ -46,7 +46,7 @@ def find_update_zip(release_dir):
     The filename is taken from the actual file rather than rebuilt from the
     version, so it cannot drift from what _make_update_package.py produced.
     """
-    matches = sorted(glob.glob(os.path.join(release_dir, "*_update.zip")))
+    matches = sorted(glob.glob(os.path.join(release_dir, "**", "*_update.zip"), recursive=True))
     if not matches:
         raise SystemExit(
             "ERROR: no '*_update.zip' in %s - is the build ZIP missing from the "

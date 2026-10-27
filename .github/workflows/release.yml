@@ -145,7 +145,7 @@ jobs:
       - name: Attach everything to a Release
         uses: softprops/action-gh-release@v3
         with:
-          files: release-files/*
+          files: release-files/**/*
           body: |
             TuneLab ${{ github.ref_name }}.
 
