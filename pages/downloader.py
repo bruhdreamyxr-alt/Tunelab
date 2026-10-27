@@ -110,3 +110,7 @@ class DownloaderPageMixin:
 
     def on_dl_cancelled(self):
         self.after(0, lambda: self._finalize_download(None, "__cancelled__"))
+
+    def update_dl_detail(self, text, color):
+        themed = self._map_color(color)
+        self.after(0, lambda: self.dl_detail.configure(text=text, text_color=themed))

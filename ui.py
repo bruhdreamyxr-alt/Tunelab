@@ -2098,9 +2098,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         self.after(0, _apply)
 
-    def update_dl_detail(self, text, color):
-        themed = self._map_color(color)
-        self.after(0, lambda: self.dl_detail.configure(text=text, text_color=themed))
+
 
     def _set_hover_detail(self, text, color):
         try:
