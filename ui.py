@@ -1707,32 +1707,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def _choose_save_folder(self):
-        start = downloader.get_download_folder()
-        choice = filedialog.askdirectory(
-            initialdir=start if os.path.isdir(start) else os.path.expanduser("~"),
-            title="Choose where downloads are saved",
-        )
-        if not choice:
-            return
-        downloader.set_download_folder(choice)
-        self._set_pref('save_folder', choice)
-        self._update_save_folder_label()
-        self.update_dl_detail(f"New downloads will be saved to:\n{choice}", "#95a5a6")
 
-    def _on_audio_format_change(self, label):
-        reverse = {p['label']: key for key, p in downloader.AUDIO_FORMATS.items()}
-        key = reverse.get(label, 'mp3_vbr')
-        downloader.set_audio_format(key)
-        self._set_pref('audio_format', key)
-        fmt_info = downloader.AUDIO_FORMATS.get(key)
-        fmt_label = fmt_info.get('label', key) if fmt_info else key
-        try:
-            if hasattr(self, 'fmt_option'):
-                self.fmt_option.set(fmt_label)
-        except Exception:
-            pass
-        self.update_dl_detail(f"Audio format set to {fmt_label}.", "#95a5a6")
 
     def _do_self_restart(self):
         """Graceful shutdown so the updater can replace the running EXE."""
