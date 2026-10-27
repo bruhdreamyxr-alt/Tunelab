@@ -3427,7 +3427,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         """
         try:
             if not getattr(self, "_tooltips_enabled", False):
-            return
+                return
         # Suppress tooltip during sidebar animation to prevent flicker.
             if getattr(self, '_sb_anim_after_id', None):
                 return
