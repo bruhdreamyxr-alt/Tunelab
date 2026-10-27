@@ -267,15 +267,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
         release_job = text.split("\n  release:")[1]
         self.assertIn("actions/setup-python@", release_job)
         self.assertIn("tools/get_version.py", release_job)
-
-    def test_the_release_writes_the_legacy_drive_manifest(self):
-        """The one file that still goes to Drive, for the transition release."""
-        release_job = _read(".github/workflows/release.yml").split(
-            "\n  release:")[1]
-        self.assertIn("tools/make_update_manifest.py", release_job)
-        self.assertIn('--repo "${{ github.repository }}"', release_job)
-        self.assertIn('--tag "${{ github.ref_name }}"', release_job)
-
     def test_every_release_file_is_attached(self):
         """update.json has to be published, or it cannot be downloaded."""
         self.assertIn("files: release-files/*",
