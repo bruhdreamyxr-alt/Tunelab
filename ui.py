@@ -2024,19 +2024,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    @staticmethod
-    def _newest_media_file(folder):
-        """Return the path to the newest media file in *folder*, or None.
 
-        Used by the history writer so saved entries point at a real file (not
-        the folder) for skip-detection and the "open file" action. Delegates to
-        the downloader helper so the direct-download path, the queue and the
-        history writer all agree on which file counts as "the media file"
-        (thumbnails excluded, newest by mtime).
-        """
-        if not folder or not os.path.isdir(folder):
-            return None
-        return downloader.pick_produced_media_file(str(folder))
 
     def _save_direct_download_to_history(self, folder, err, filepath=None, is_video=False):
         """Save a direct (non-queue) download to the history file."""

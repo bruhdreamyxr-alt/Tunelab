@@ -302,3 +302,10 @@ class DownloaderPageMixin:
             self.title(f"TuneLab ({self._unfocused_done} new)")
         except Exception:
             pass
+
+    @staticmethod
+    def _newest_media_file(folder):
+        """Return the path to the newest media file in *folder*, or None."""
+        if not folder or not os.path.isdir(folder):
+            return None
+        return downloader.pick_produced_media_file(str(folder))
