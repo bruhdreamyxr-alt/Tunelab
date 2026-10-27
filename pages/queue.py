@@ -121,20 +121,7 @@ class QueuePageMixin:
         # Clear Done). Up, Down, Retry, Cancel and Clear move to a secondary
         # row so the primary bar never overflows on narrow windows.
         queue_btn_row = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
-        queue_btn_row.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(6, 10))
-
-        self.btn_queue_select_all = ctk.CTkButton(
-            queue_btn_row, text="Select All", width=80, height=UITheme.H_CTRL,
-            command=lambda: self.queue_rows.select_all())
-        self.btn_queue_select_all.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_select_all, "ghost", bordered=True)
-        self.btn_queue_deselect_all = ctk.CTkButton(
-            queue_btn_row, text="Deselect All", width=90, height=UITheme.H_CTRL,
-            command=lambda: self.queue_rows.select_clear())
-        self.btn_queue_deselect_all.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_deselect_all, "ghost", bordered=True)
-
-
+        queue_btn_row.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(6, 2))
 
         self.btn_queue_start = ctk.CTkButton(
             queue_btn_row, text="Start", width=72, height=UITheme.H_CTRL,
@@ -148,18 +135,32 @@ class QueuePageMixin:
         self.btn_queue_remove.pack(side="left", padx=3)
         self._style_button(self.btn_queue_remove, "danger", icon="trash")
 
+        queue_btn_row2 = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
+        queue_btn_row2.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(0, 8))
+
+        self.btn_queue_select_all = ctk.CTkButton(
+            queue_btn_row2, text="Select All", width=80, height=UITheme.H_CTRL,
+            command=lambda: self.queue_rows.select_all())
+        self.btn_queue_select_all.pack(side="left", padx=3)
+        self._style_button(self.btn_queue_select_all, "ghost", bordered=True)
+
+        self.btn_queue_deselect_all = ctk.CTkButton(
+            queue_btn_row2, text="Deselect All", width=90, height=UITheme.H_CTRL,
+            command=lambda: self.queue_rows.select_clear())
+        self.btn_queue_deselect_all.pack(side="left", padx=3)
+        self._style_button(self.btn_queue_deselect_all, "ghost", bordered=True)
+
         self.btn_queue_clear_done = ctk.CTkButton(
-            queue_btn_row, text="Clear Done", width=72, height=UITheme.H_CTRL,
+            queue_btn_row2, text="Clear Done", width=72, height=UITheme.H_CTRL,
             command=self._queue_clear_completed)
         self.btn_queue_clear_done.pack(side="left", padx=3)
         self._style_button(self.btn_queue_clear_done, "danger", icon="check")
 
         self.btn_queue_cancel = ctk.CTkButton(
-            queue_btn_row, text="Cancel", width=62, height=UITheme.H_CTRL,
+            queue_btn_row2, text="Cancel", width=62, height=UITheme.H_CTRL,
             command=self._queue_cancel_all)
         self.btn_queue_cancel.pack(side="left", padx=3)
         self._style_button(self.btn_queue_cancel, "danger", icon="close")
-
 
         # Listbox fills all remaining space above the toolbar.
         self.queue_rows.pack(pady=(14, 0), padx=UITheme.PAD_X,
