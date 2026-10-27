@@ -2181,30 +2181,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._last_title_pct = None
         self.set_download_buttons_state(True)
 
-    def _retry_last_download(self):
-        """Re-run the last download with the same URL and audio/video mode.
 
-        Wired to the "Try again" button of the failure dialog. Falls back to the
-        remembered URL when the entry has been edited or cleared since.
-        """
-        try:
-            url = (self.url_entry.get() or "").strip() or self._last_dl_url
-        except Exception:
-            url = self._last_dl_url
-        if not url:
-            self.show_toast("Nothing to retry — paste a link first", "warning")
-            return
-        self.show_frame("downloader")
-        try:
-            self.url_entry.delete(0, "end")
-            self.url_entry.insert(0, url)
-            self._sync_clear_btn()
-        except Exception:
-            pass
-        if getattr(self, "_last_dl_was_video", False):
-            self._start_worker(self.download_mp4)
-        else:
-            self._start_worker(self.download_mp3)
 
     @staticmethod
     def _newest_media_file(folder):
