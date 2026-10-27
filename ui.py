@@ -1302,6 +1302,15 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         if not urls:
             self.show_toast("No valid URLs found.", "warning")
             return
+        self._init_queue_manager()
+        if not self._queue_manager:
+            self.show_toast("Queue manager is not available.", "error")
+            return
+        try:
+            self._enqueue_urls(urls, is_video=True)
+        except Exception as e:
+            self.show_toast(f"Queue error: {e}", "error")
+
     def _add_current_to_queue(self):
         """Add the current URL(s) to the queue without starting download (audio)."""
         import time
@@ -1319,20 +1328,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             return
         self._init_queue_manager()
         if not self._queue_manager:
-            self._show_error_dialog("Queue Error", "Queue manager is not available.")
+            self.show_toast("Queue manager is not available.", "error")
             return
         self._enqueue_urls(urls, is_video=False)
-
-
-        self._init_queue_manager()
-        if not self._queue_manager:
-            self._show_error_dialog("Queue Error", "Queue manager is not available.")
-            return
-        try:
-            self._enqueue_urls(urls, is_video=True)
-        except Exception as e:
-            self.show_toast(f"Queue error: {e}", "error")
-
 
     @staticmethod
     def _split_input_urls(raw: str) -> list[str]:
