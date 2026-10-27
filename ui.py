@@ -2047,66 +2047,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def _finalize_download(self, folder, err):
-        if err == "__cancelled__":
-            self.update_dl_status("Cancelled", "#f39c12")
-            self.progress_bar.set(0)
-            self.update_dl_detail("", "#95a5a6")
-            self.show_toast("Download cancelled", "warning")
-        elif err:
-            cleaned_err = downloader._strip_ansi(err) if hasattr(downloader, '_strip_ansi') else str(err)
-            self.update_dl_status("Failed", "#e74c3c")
-            self.progress_bar.set(0)
-            # yt-dlp fails with a wall of text. Lead with the first line so the
-            # dialog stays readable, keep the full log copyable, and offer the
-            # retry instead of making the user re-paste the link.
-            headline = next((ln.strip() for ln in cleaned_err.splitlines()
-                             if ln.strip()), "The download failed.")
-            self._show_error_dialog(
-                "Download Failed", headline, detail=cleaned_err,
-                action_label="Try again", action_cb=self._retry_last_download)
-        else:
-            self.update_dl_status("Finished!", "#2ecc71")
-            self.progress_bar.set(1.0)
-            self.update_dl_detail(str(folder), "#95a5a6")
-            self._bump_completion_badge()
-            # Find the file THIS download just produced (newest by mtime) so the
-            # tag-editor button and the ID3 writer target the right file. The old
-            # reverse-sorted directory scan picked the alphabetically-last media
-            # file in the folder, so tags were written to an unrelated older
-            # download and the new file kept blank title/artist/album tags.
-            if folder and os.path.isdir(str(folder)):
-                downloaded_file = self._newest_media_file(folder)
-                if downloaded_file:
-                    self._last_downloaded_file = downloaded_file
-                    self.btn_edit_tags.configure(state="normal")
-                    self._refresh_tag_target()
-                    # Strip the "Mark of the Web" so Windows Defender doesn't
-                    # quarantine the file as a suspicious internet download.
-                    downloader._strip_zone_identifier(downloaded_file)
-                    # Write proper ID3 tags (artist/title/album/artwork) so Windows file details show correctly
-                    meta = downloader.get_last_dl_metadata()
-                    if meta and downloaded_file.lower().endswith(('.mp3', '.flac')):
-                        downloader.write_id3_tags(
-                            downloaded_file,
-                            artist=meta.get("artist", ""),
-                            title=meta.get("title", ""),
-                            album=meta.get("album", ""),
-                            genre=meta.get("genre", ""),
-                            year=meta.get("year", ""),
-                            artwork_path=meta.get("artwork_path", ""),
-                        )
-            downloader.open_in_file_manager(str(folder))
-            # Save to history
-            self._save_direct_download_to_history(folder, err,
-                filepath=self._last_downloaded_file, is_video=self._last_dl_was_video)
-            # Non-blocking cue: the file manager just took focus, so a modal
-            # "Success!" box would be noise — the toast slides in instead.
-            name = os.path.basename(self._last_downloaded_file or "") or "Download complete"
-            self.show_toast(f"Saved  {name}", "success")
-        self.title("TuneLab")
-        self._last_title_pct = None
-        self.set_download_buttons_state(True)
+
 
 
 
