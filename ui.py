@@ -2069,8 +2069,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def on_dl_cancelled(self):
-        self.after(0, lambda: self._finalize_download(None, "__cancelled__"))
+
 
     def update_dl_status(self, text, color):
         themed = self._map_color(color)

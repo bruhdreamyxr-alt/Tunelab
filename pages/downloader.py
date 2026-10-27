@@ -107,3 +107,6 @@ class DownloaderPageMixin:
         self.update_dl_status("Cancelling...", "#f39c12")
         self.update_dl_detail("Waiting for the current download to stop...", "#95a5a6")
         self.btn_cancel_download.configure(state="disabled")
+
+    def on_dl_cancelled(self):
+        self.after(0, lambda: self._finalize_download(None, "__cancelled__"))
