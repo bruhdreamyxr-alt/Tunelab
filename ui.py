@@ -2045,11 +2045,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         self.after(0, _apply)
 
-    def on_dl_success(self, folder):
-        self.after(0, lambda: self._finalize_download(folder, None))
 
-    def on_dl_error(self, err):
-        self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
         if err == "__cancelled__":

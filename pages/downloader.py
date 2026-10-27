@@ -224,3 +224,9 @@ class DownloaderPageMixin:
             self.on_dl_error(f"Unexpected download error: {e}")
         finally:
             self.set_download_buttons_state(True)
+
+    def on_dl_success(self, folder):
+        self.after(0, lambda: self._finalize_download(folder, None))
+
+    def on_dl_error(self, err):
+        self.after(0, lambda: self._finalize_download(None, err))
