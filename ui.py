@@ -1208,19 +1208,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             logger.debug("Could not update the preview Stop button",
                          exc_info=True)
 
-    def _sync_clear_btn(self):
-        """Show the inline ✕ only while the URL box has text."""
-        try:
-            show = bool(self.url_entry.get().strip())
-            if show == self._url_clear_btn_visible:
-                return
-            self._url_clear_btn_visible = show
-            if show:
-                self.btn_clear_url.place(relx=1.0, rely=0.5, anchor="e", x=-6)
-            else:
-                self.btn_clear_url.place_forget()
-        except Exception:
-            pass
+
 
     def _clear_url_entry(self, _event=None):
         """Escape (and the ✕ button) empty the URL box; keep focus in it."""

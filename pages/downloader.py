@@ -159,3 +159,17 @@ class DownloaderPageMixin:
         cancel_state = "disabled" if enabled else "normal"
         self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
         self._show_progress_row(not enabled)
+
+    def _sync_clear_btn(self):
+        """Show the inline ✕ only while the URL box has text."""
+        try:
+            show = bool(self.url_entry.get().strip())
+            if show == self._url_clear_btn_visible:
+                return
+            self._url_clear_btn_visible = show
+            if show:
+                self.btn_clear_url.place(relx=1.0, rely=0.5, anchor="e", x=-6)
+            else:
+                self.btn_clear_url.place_forget()
+        except Exception:
+            pass
