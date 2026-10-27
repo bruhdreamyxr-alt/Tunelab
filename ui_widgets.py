@@ -203,6 +203,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._rows: list[Any] = []
         self._overrides: dict[int, str] = {}  # per-row text_color (placeholder)
         self._selected: int | None = None
+        self._select_all_mode: bool = False
         self._row_fg = pal.get("text", "#ecf0f1")
         self._sel_bg = pal.get("accent", "#3498db")
         self._sel_fg = _on_color(
@@ -257,6 +258,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._labels.clear()
         self._overrides.clear()
         self._selected = None
+        self._select_all_mode = False
 
     def itemconfig(self, index, **kwargs) -> None:
         if not isinstance(index, int) or not (0 <= index < len(self._rows)):
@@ -271,6 +273,8 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._paint(index)
 
     def curselection(self):
+        if self._select_all_mode:
+            return tuple(range(len(self._labels)))
         return () if self._selected is None else (self._selected,)
 
     # --- theming ---------------------------------------------------
@@ -306,6 +310,18 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         """Move the highlight without a click - the listbox spelling.
 
         Reordering a row puts it somewhere new, and the highlight has to go
+    def select_all(self) -> None:
+        self._select_all_mode = True
+        self._selected = None
+        for i in range(len(self._rows)):
+            self._paint(i)
+
+    def select_clear(self) -> None:
+        self._select_all_mode = False
+        self._selected = None
+        for i in range(len(self._rows)):
+            self._paint(i)
+
         with it: leaving the selection behind would mean the next action
         applies to whatever row happens to land on the old index.
         """
@@ -314,7 +330,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
     def _paint(self, i: int) -> None:
         if not (0 <= i < len(self._rows)):
             return
-        if i == self._selected:
+        if self._select_all_mode or i == self._selected:
             self._rows[i].configure(
                 fg_color=self._sel_bg, text_color=self._sel_fg)
         elif i in self._overrides:
