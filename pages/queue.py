@@ -136,7 +136,7 @@ class QueuePageMixin:
         self._style_button(self.btn_queue_remove, "danger", icon="trash")
 
         queue_btn_row2 = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
-        queue_btn_row2.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(0, 8))
+        queue_btn_row2.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(0, 14))
 
         self.btn_queue_select_all = ctk.CTkButton(
             queue_btn_row2, text="Select All", width=80, height=UITheme.H_CTRL,
