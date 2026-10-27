@@ -4,22 +4,12 @@
 Move the Downloader page out of `ui.py` into `pages/downloader.py` as a
 `DownloaderPageMixin`, matching the existing queue/history/updates mixins.
 
-## Steps (each gated by tests + probe)
-
-1. Create `pages/downloader.py` with a `DownloaderPageMixin` stub importing the
-   same modules (`downloader`, `download_queue`, etc.).
-2. Move self-contained handler groups first (download_mp3, download_mp4,
-   cancel, preview, format/folder prefs, retry) into the mixin, leaving
-   widget construction in `__init__`. Run full suite.
-3. ~~Move widget construction into `build_downloader_view()` and register it in
-   `_LAZY_PAGES`~~ (deferred — construction is tightly coupled to `__init__`;
-   benefit is low since Downloader is the landing page).
-4. Remove now-unused imports/helpers from `ui.py`; verify `_themed_registry`
-   and `_theme_roles` coverage for the new page.
-5. Cleanup pass: dead legacy code, hardcoded fallback colors, `_theme_roles`
-4. Cleanup pass: probe passes; no further changes this round.
-
-   gaps on other pages.
-
 ## Status
-Deferred until after the in-progress big changes. Do not start mid-feature.
+- Step 1: done (stub mixin created and wired).
+- Step 2: done (handlers moved; construction remains in `__init__`).
+- Step 3: deferred (construction tightly coupled; low benefit - landing page).
+- Step 4: done (probe green; cleanup pass).
+
+## Remaining
+- Optional: move preview/studio handlers to a Studio mixin.
+- Optional: revisit Step 3 if startup/layout consistency becomes a priority.
