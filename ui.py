@@ -1333,7 +1333,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         if not self._queue_manager:
             self._show_error_dialog("Queue Error", "Queue manager is not available.")
             return
-        self._enqueue_urls(urls, is_video=True)
+        try:
+            self._enqueue_urls(urls, is_video=True)
+        except Exception as e:
+            self.show_toast(f"Queue error: {e}", "error")
 
 
     @staticmethod
