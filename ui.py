@@ -1709,15 +1709,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def _do_self_restart(self):
-        """Graceful shutdown so the updater can replace the running EXE."""
-        self._ui_closed = True
-        try:
-            self.quit()
-            self.destroy()
-        except Exception:
-            pass
-        os._exit(0)
+
 
 
     def download_mp3(self):

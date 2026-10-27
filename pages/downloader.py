@@ -58,6 +58,8 @@ class DownloaderPageMixin:
         except Exception:
             logger.debug("Save-folder label update failed", exc_info=True)
 
+
+
     def _choose_save_folder(self):
         start = downloader.get_download_folder()
         choice = filedialog.askdirectory(
@@ -86,3 +88,13 @@ class DownloaderPageMixin:
         self.update_dl_detail(f"Audio format set to {fmt_label}.", "#95a5a6")
 
 
+
+    def _do_self_restart(self):
+        """Graceful shutdown so the updater can replace the running EXE."""
+        self._ui_closed = True
+        try:
+            self.quit()
+            self.destroy()
+        except Exception:
+            pass
+        os._exit(0)
