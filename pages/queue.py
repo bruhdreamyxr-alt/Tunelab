@@ -121,7 +121,7 @@ class QueuePageMixin:
         # Clear Done). Up, Down, Retry, Cancel and Clear move to a secondary
         # row so the primary bar never overflows on narrow windows.
         queue_btn_row = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
-        queue_btn_row.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(6, 2))
+        queue_btn_row.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(6, 8))
 
         self.btn_queue_start = ctk.CTkButton(
             queue_btn_row, text="Start", width=72, height=UITheme.H_CTRL,

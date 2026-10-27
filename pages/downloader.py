@@ -262,7 +262,6 @@ class DownloaderPageMixin:
                 downloaded_file = self._newest_media_file(folder)
                 if downloaded_file:
                     self._last_downloaded_file = downloaded_file
-                    self.btn_edit_tags.configure(state="normal")
                     self._refresh_tag_target()
                     downloader._strip_zone_identifier(downloaded_file)
                     meta = downloader.get_last_dl_metadata()
