@@ -277,3 +277,15 @@ class DownloaderPageMixin:
         self.title("TuneLab")
         self._last_title_pct = None
         self.set_download_buttons_state(True)
+
+    def update_progress_bar(self, value):
+        value = min(max(value, 0.0), 1.0)
+
+        def _apply():
+            self.progress_bar.set(value)
+            pct = int(value * 100)
+            if pct != getattr(self, "_last_title_pct", None):
+                self._last_title_pct = pct
+                self.title(f"TuneLab — {pct}%")
+
+        self.after(0, _apply)

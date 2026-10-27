@@ -2031,19 +2031,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         if hasattr(self, "_dl_detail_backup_text"):
             self.update_dl_detail(self._dl_detail_backup_text, getattr(self, "_dl_detail_backup_color", "#95a5a6"))
 
-    def update_progress_bar(self, value):
-        value = min(max(value, 0.0), 1.0)
 
-        def _apply():
-            self.progress_bar.set(value)
-            # Mirror progress into the title so the taskbar/hover shows it
-            # without focusing the window; skip no-change ticks.
-            pct = int(value * 100)
-            if pct != getattr(self, "_last_title_pct", None):
-                self._last_title_pct = pct
-                self.title(f"TuneLab — {pct}%")
-
-        self.after(0, _apply)
 
 
 
