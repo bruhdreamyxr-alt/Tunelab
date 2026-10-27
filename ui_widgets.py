@@ -789,11 +789,12 @@ class UiSplitsMixin:
         self.aep_year_var = tk.IntVar(value=2026)
         chips = ctk.CTkFrame(tgt_card, fg_color="transparent")
         chips.pack(fill="x", padx=16, pady=(0, 4))
-        for _yr in (2022, 2023, 2024, 2025, 2026):
+        for i, _yr in enumerate((2022, 2023, 2024, 2025, 2026)):
             rb = ctk.CTkRadioButton(
                 chips, text=str(_yr), variable=self.aep_year_var,
                 value=_yr, command=self._on_aep_year_change)
-            rb.pack(side="left", padx=(0, 14))
+            rb.grid(row=i // 3, column=i % 3, padx=(0, 14), pady=(0, 4),
+                    sticky="w")
         ctk.CTkLabel(
             tgt_card,
             text="The copy is re-stamped for that year's After Effects. "
