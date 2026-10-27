@@ -315,6 +315,10 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._selected = None
         for i in range(len(self._rows)):
             self._paint(i)
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass
 
     def select_clear(self) -> None:
         self._select_all_mode = False
