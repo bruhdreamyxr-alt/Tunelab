@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.3 — 2026-10-27
+
+### Fixed
+- Inno Setup install step PowerShell syntax in release workflow.
+
 ## 2.9.2 — 2026-10-27
 
 ### Added

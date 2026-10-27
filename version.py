@@ -34,4 +34,4 @@
 # finished file plays everywhere, and the old After Effects re-encode step
 # is gone entirely - there is nothing left to fix up after the download.
 
-__version__ = "2.9.2"
+__version__ = "2.9.3"
