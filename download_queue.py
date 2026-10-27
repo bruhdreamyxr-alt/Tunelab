@@ -447,7 +447,7 @@ class DownloadQueue:
     def _already_downloaded(self, item):
         history = self._load_history()
         for entry in history:
-            if entry.get("url") == item.url and entry.get("status") == "done":
+            if entry.get("url") == item.url and entry.get("status") == "done" and entry.get("is_video", False) == item.is_video:
                 fp = entry.get("filepath", "")
                 if not fp:
                     continue
