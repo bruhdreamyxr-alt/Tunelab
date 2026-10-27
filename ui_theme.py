@@ -799,7 +799,7 @@ COLOR_THEMES = {
     },
     'Crimson': {
         'bg': '#1a1012', 'surface': '#241618', 'sidebar': '#160d0f',
-        'sidebar_active': '#3a1f23', 'hover': '#2e191d',
+        'sidebar_active': '#3a1f23', 'hover': '#352024',
         'accent': '#ef4444', 'accent_hover': '#dc2626',
         'text': '#f5e6e8', 'sub': '#a5888c',
         'success': '#4ade80', 'success_hover': '#22c55e',
