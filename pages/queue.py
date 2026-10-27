@@ -125,12 +125,12 @@ class QueuePageMixin:
 
         self.btn_queue_select_all = ctk.CTkButton(
             queue_btn_row, text="Select All", width=80, height=UITheme.H_CTRL,
-            command=lambda: (self.queue_rows.select_all(), self._refresh_queue_tab()))
+            command=lambda: self.queue_rows.select_all())
         self.btn_queue_select_all.pack(side="left", padx=3)
         self._style_button(self.btn_queue_select_all, "ghost", bordered=True)
         self.btn_queue_deselect_all = ctk.CTkButton(
             queue_btn_row, text="Deselect All", width=90, height=UITheme.H_CTRL,
-            command=lambda: (self.queue_rows.select_clear(), self._refresh_queue_tab()))
+            command=lambda: self.queue_rows.select_clear())
         self.btn_queue_deselect_all.pack(side="left", padx=3)
         self._style_button(self.btn_queue_deselect_all, "ghost", bordered=True)
 
