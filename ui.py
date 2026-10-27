@@ -1293,6 +1293,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def _add_current_to_queue_video(self):
         """Add the current URL(s) to the queue as video (MP4)."""
+        import time
+        now = time.monotonic()
+        if getattr(self, "_last_queue_add_at", 0) and now - self._last_queue_add_at < 0.5:
+            return
+        self._last_queue_add_at = now
         raw = self.url_entry.get().strip()
         if not raw:
             self.show_toast("Please enter a URL first.", "warning")
@@ -1303,6 +1308,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             return
     def _add_current_to_queue(self):
         """Add the current URL(s) to the queue without starting download (audio)."""
+        import time
+        now = time.monotonic()
+        if getattr(self, "_last_queue_add_at", 0) and now - self._last_queue_add_at < 0.5:
+            return
+        self._last_queue_add_at = now
         raw = self.url_entry.get().strip()
         if not raw:
             self.show_toast("Please enter a URL first.", "warning")
