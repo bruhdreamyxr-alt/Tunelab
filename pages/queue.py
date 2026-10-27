@@ -129,13 +129,6 @@ class QueuePageMixin:
         self.btn_queue_start.pack(side="left", padx=3)
         self._style_button(self.btn_queue_start, "primary", icon="play")
 
-        # Ghost utilities: act on the selected row.
-        self.btn_queue_skip = ctk.CTkButton(
-            queue_btn_row, text="Skip", width=52, height=UITheme.H_CTRL,
-            command=self._queue_skip_selected)
-        self.btn_queue_skip.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_skip, "ghost", bordered=True, icon="skip")
-
         self.btn_queue_remove = ctk.CTkButton(
             queue_btn_row, text="Remove", width=62, height=UITheme.H_CTRL,
             command=self._queue_remove_selected)
@@ -148,40 +141,12 @@ class QueuePageMixin:
         self.btn_queue_clear_done.pack(side="left", padx=3)
         self._style_button(self.btn_queue_clear_done, "danger", icon="check")
 
-        # Secondary row: less-frequent actions, kept out of the primary bar
-        # so it stays narrow enough to fit at any window width.
-        queue_btn_row2 = ctk.CTkFrame(self.tab_queue, fg_color="transparent")
-        queue_btn_row2.pack(side="bottom", fill="x", padx=UITheme.PAD_X, pady=(0, 6))
-
-        self.btn_queue_up = ctk.CTkButton(
-            queue_btn_row2, text="Up", width=44, height=UITheme.H_CTRL,
-            command=lambda: self._queue_move_selected(-1))
-        self.btn_queue_up.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_up, "ghost", bordered=True, icon="chevron_up")
-
-        self.btn_queue_down = ctk.CTkButton(
-            queue_btn_row2, text="Down", width=52, height=UITheme.H_CTRL,
-            command=lambda: self._queue_move_selected(1))
-        self.btn_queue_down.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_down, "ghost", bordered=True, icon="chevron_down")
-
-        self.btn_queue_retry = ctk.CTkButton(
-            queue_btn_row2, text="Retry", width=60, height=UITheme.H_CTRL,
-            command=self._queue_retry_failed)
-        self.btn_queue_retry.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_retry, "ghost", bordered=True, icon="refresh")
-
         self.btn_queue_cancel = ctk.CTkButton(
-            queue_btn_row2, text="Cancel", width=62, height=UITheme.H_CTRL,
+            queue_btn_row, text="Cancel", width=62, height=UITheme.H_CTRL,
             command=self._queue_cancel_all)
         self.btn_queue_cancel.pack(side="left", padx=3)
         self._style_button(self.btn_queue_cancel, "danger", icon="close")
 
-        self.btn_queue_clear = ctk.CTkButton(
-            queue_btn_row2, text="Clear", width=52, height=UITheme.H_CTRL,
-            command=self._queue_clear)
-        self.btn_queue_clear.pack(side="left", padx=3)
-        self._style_button(self.btn_queue_clear, "danger", icon="trash")
 
         # Listbox fills all remaining space above the toolbar.
         self.queue_rows.pack(pady=(14, 0), padx=UITheme.PAD_X,
