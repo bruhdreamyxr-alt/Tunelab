@@ -17,6 +17,8 @@ Move the Downloader page out of `ui.py` into `pages/downloader.py` as a
 4. Remove now-unused imports/helpers from `ui.py`; verify `_themed_registry`
    and `_theme_roles` coverage for the new page.
 5. Cleanup pass: dead legacy code, hardcoded fallback colors, `_theme_roles`
+4. Cleanup pass: probe passes; no further changes this round.
+
    gaps on other pages.
 
 ## Status
