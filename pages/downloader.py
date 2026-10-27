@@ -11,6 +11,7 @@ from tkinter import filedialog
 from typing import Any
 
 import downloader
+from ui_theme import UITheme
 
 logger = logging.getLogger("universal_audio_studio.pages.downloader")
 
@@ -114,3 +115,18 @@ class DownloaderPageMixin:
     def update_dl_detail(self, text, color):
         themed = self._map_color(color)
         self.after(0, lambda: self.dl_detail.configure(text=text, text_color=themed))
+
+    def _show_progress_row(self, visible: bool) -> None:
+        """Show the progress bar + Cancel only while a download is running."""
+        row = getattr(self, "_progress_row", None)
+        if row is None:
+            return
+        try:
+            if visible:
+                if not row.winfo_manager():
+                    row.pack(fill="x", padx=UITheme.PAD_X,
+                             pady=(0, UITheme.RHYTHM))
+            elif row.winfo_manager():
+                row.pack_forget()
+        except Exception:
+            logger.debug("Could not toggle the progress row", exc_info=True)

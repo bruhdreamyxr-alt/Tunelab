@@ -2052,20 +2052,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # the duration and packed away once the download buttons come back.
         self._show_progress_row(not enabled)
 
-    def _show_progress_row(self, visible: bool) -> None:
-        """Show the progress bar + Cancel only while a download is running."""
-        row = getattr(self, "_progress_row", None)
-        if row is None:
-            return
-        try:
-            if visible:
-                if not row.winfo_manager():
-                    row.pack(fill="x", padx=UITheme.PAD_X,
-                             pady=(0, UITheme.RHYTHM))
-            elif row.winfo_manager():
-                row.pack_forget()
-        except Exception:
-            logger.debug("Could not toggle the progress row", exc_info=True)
+
 
 
 
