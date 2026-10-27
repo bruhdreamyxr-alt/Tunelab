@@ -2026,36 +2026,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def _save_direct_download_to_history(self, folder, err, filepath=None, is_video=False):
-        """Save a direct (non-queue) download to the history file."""
-        try:
-            self._init_queue_manager()
-            if not self._queue_manager:
-                return
-            url = self.url_entry.get().strip()
-            if not url:
-                return
-            meta = downloader.get_last_dl_metadata() or {}
-            # Resolve the actual downloaded file: prefer the explicit path, else
-            # find the newest media file in the folder so history always points at
-            # a real file (not the folder) for the "skip if already downloaded"
-            # check and the "open file" action.
-            resolved_path = filepath
-            if not resolved_path:
-                resolved_path = self._newest_media_file(folder)
-            entry = {
-                "url": url,
-                "title": meta.get("title") or meta.get("artist") or url[:60],
-                "status": "done" if not err else "failed",
-                "filepath": str(resolved_path) if resolved_path else (str(folder) if folder else ""),
-                "timestamp": __import__("time").time(),
-                "is_video": bool(is_video),
-            }
-            # Delegate the write to the queue manager so it is atomic and
-            # thread-safe (temp file + os.replace under a shared lock).
-            self._queue_manager.upsert_history_entry(entry)
-        except Exception as e:
-            logger.warning("Failed to save download to history: %s", e)
+
 
     # --- TAB 2 DESIGN ---
     def build_studio_view(self):
