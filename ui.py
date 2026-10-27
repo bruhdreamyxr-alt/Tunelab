@@ -1705,22 +1705,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def _bump_completion_badge(self):
-        """Count downloads that finished while the window was unfocused.
 
-        The taskbar title is the only signal that survives the user being
-        on another tab or another app; the badge clears on focus-in.
-        """
-        try:
-            if self.focus_displayof() is not None:
-                return  # the user is already looking at the app
-        except Exception:
-            return
-        self._unfocused_done += 1
-        try:
-            self.title(f"TuneLab ({self._unfocused_done} new)")
-        except Exception:
-            pass
 
     def _clear_completion_badge(self, _event=None):
         self._unfocused_done = 0

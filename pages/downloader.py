@@ -289,3 +289,16 @@ class DownloaderPageMixin:
                 self.title(f"TuneLab — {pct}%")
 
         self.after(0, _apply)
+
+    def _bump_completion_badge(self):
+        """Count downloads that finished while the window was unfocused."""
+        try:
+            if self.focus_displayof() is not None:
+                return
+        except Exception:
+            return
+        self._unfocused_done += 1
+        try:
+            self.title(f"TuneLab ({self._unfocused_done} new)")
+        except Exception:
+            pass
