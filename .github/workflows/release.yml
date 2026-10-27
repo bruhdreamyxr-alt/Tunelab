@@ -135,20 +135,6 @@ jobs:
 
       - name: List what will be published
         run: ls -lh release-files
-
-      - name: Write the legacy Google Drive manifest
-        # One last trip through the old update channel. Copies of 2.0.0 and
-        # earlier read a manifest from a fixed Google Drive file and download
-        # whichever ZIP it names; this writes that manifest, pointing at the ZIP
-        # attached a moment later. The old app then fetches the new build
-        # straight from GitHub, so the only thing that ever has to go to Drive
-        # again is this ~120 byte JSON file (see RELEASE.md for the few clicks).
-        run: |
-          python tools/make_update_manifest.py \
-            --release-dir release-files \
-            --repo "${{ github.repository }}" \
-            --tag "${{ github.ref_name }}"
-
       - name: Attach everything to a Release
         uses: softprops/action-gh-release@v3
         with:

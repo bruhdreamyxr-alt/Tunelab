@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.6 — 2026-10-27
+
+### Fixed
+- Removed legacy Google Drive manifest step from release workflow.
+
 ## 2.9.5 — 2026-10-27
 
 ### Full changelog (2.9.2 → 2.9.5)
