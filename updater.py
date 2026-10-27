@@ -32,7 +32,7 @@ logger = logging.getLogger("universal_audio_studio.updater")
 #       -> "tag_name" -> the version to compare against
 #       -> "assets"   -> the one ending in "_update.zip" is the self-update payload
 #
-# Replaces an earlier Google Drive manifest (update.json) that had to be edited
+# Replaces an earlier manifest (update.json) that had to be edited
 # and re-uploaded by hand for every release, and whose file IDs had to be kept
 # in sync with this file.
 #
@@ -113,7 +113,7 @@ def _request_url(url: str, timeout: int = 15):
 
     An HTML body means we did not reach the file we asked for (a proxy block
     page, or an error document). That case used to be handled by following
-    Google Drive's "can't scan this file for viruses" interstitial form; updates
+
     come from GitHub Releases now, so HTML is simply a failure.
     """
     if not url or not url.startswith(("http://", "https://")):
