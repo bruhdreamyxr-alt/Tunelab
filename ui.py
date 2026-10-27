@@ -2040,17 +2040,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self.btn_preview_video.configure(state="normal")
             self._show_stop_button(self.btn_stop_video, False)
 
-    def set_download_buttons_state(self, enabled: bool):
-        state = "normal" if enabled else "disabled"
-        self.after(0, lambda: self.btn_download_mp3.configure(state=state))
-        self.after(0, lambda: self.btn_download_mp4.configure(state=state))
-        # The cancel button mirrors the inverse state of the download buttons.
-        cancel_state = "disabled" if enabled else "normal"
-        self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
-        # enabled=False means "a download is starting" (the callers pass the
-        # opposite of what the label suggests), so the progress row is shown for
-        # the duration and packed away once the download buttons come back.
-        self._show_progress_row(not enabled)
+
 
 
 
