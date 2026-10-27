@@ -383,10 +383,12 @@ class DownloadQueue:
     def add(self, urls, is_video=False, skip_existing=True):
         added = 0
         with self._lock:
+            existing = {(it.url, it.is_video) for it in self._items}
             for url in urls:
                 url = url.strip()
-                if url and url.startswith(('http://', 'https://')):
+                if url and url.startswith(('http://', 'https://')) and (url, is_video) not in existing:
                     self._items.append(QueueItem(url, is_video, skip_existing))
+                    existing.add((url, is_video))
                     added += 1
         if added:
             self._persist()
