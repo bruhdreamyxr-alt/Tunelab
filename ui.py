@@ -1700,57 +1700,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
 
 
-    def download_mp3(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            return
-        self._last_dl_url = url
-        self._last_dl_was_video = False
-        self._last_downloaded_file = None
-        self.set_download_buttons_state(False)
-        self.progress_bar.set(0)
-        self.update_dl_status("Downloading audio...", "#3498db")
-        self.update_dl_detail("", "#95a5a6")
-        downloader.begin_download_session()
-        try:
-            downloader.download_track(
-                url,
-                self.update_dl_status,
-                self.on_dl_success,
-                self.on_dl_error,
-                progress_callback=self.update_progress_bar,
-                detail_callback=self.update_dl_detail,
-                soundcloud_direct_first=bool(self._prefs.get('soundcloud_direct_first', True)),
-            )
-        except downloader.DownloadCancelled:
-            self.on_dl_cancelled()
-        except Exception as e:
-            logger.exception("MP3 download failed unexpectedly")
-            self.on_dl_error(f"Unexpected download error: {e}")
-        finally:
-            self.set_download_buttons_state(True)
 
 
-    def download_mp4(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            return
-        self._last_dl_url = url
-        self._last_dl_was_video = True
-        self._last_downloaded_file = None
-        self.set_download_buttons_state(False)
-        self.progress_bar.set(0)
-        self.update_dl_status("Downloading video...", "#27ae60")
-        downloader.begin_download_session()
-        try:
-            downloader.download_video_mp4(url, self.update_dl_status, self.on_dl_success, self.on_dl_error, progress_callback=self.update_progress_bar)
-        except downloader.DownloadCancelled:
-            self.on_dl_cancelled()
-        except Exception as e:
-            logger.exception("MP4 download failed unexpectedly")
-            self.on_dl_error(f"Unexpected download error: {e}")
-        finally:
-            self.set_download_buttons_state(True)
+
+
 
     def _bump_completion_badge(self):
         """Count downloads that finished while the window was unfocused.
