@@ -575,6 +575,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._sb_peek_after_id = None
         self._sb_peeking = False
         self._sb_peek_pref = False
+        self._tooltips_enabled = False
         self._sb_popups = []      # the one reused tooltip popup, tracked so a
                                   # failed configure can never strand it on screen
         self._sb_tooltip_after_id = None
@@ -699,6 +700,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Hover-peek only means something while the rail is collapsed, and it
         # stays off unless it was asked for.
         self._sb_peek_pref = bool(self._prefs.get('sidebar_peek_on_hover', False))
+        self._tooltips_enabled = False
 
         # Downloader builds now; the rest build on first visit (see show_frame
         # and _ensure_page_built). Building everything up front cost ~1-1.5s of
@@ -3424,7 +3426,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         glyph-only buttons.
         """
         try:
-            # Suppress tooltip during sidebar animation to prevent flicker.
+            if not getattr(self, "_tooltips_enabled", False):
+            return
+        # Suppress tooltip during sidebar animation to prevent flicker.
             if getattr(self, '_sb_anim_after_id', None):
                 return
             # Also while peeking: the labels are already readable then, and a
