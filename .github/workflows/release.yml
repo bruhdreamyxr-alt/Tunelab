@@ -140,38 +140,33 @@ jobs:
         with:
           files: release-files/*
           body: |
-            Universal Audio Studio ${{ github.ref_name }}.
+            TuneLab ${{ github.ref_name }}.
 
-            * `mysetup*.exe` — the installer. Run it and the app is ready to go.
-            * `UniversalAudioStudio_*_update.zip` — used only by the in-app
-              updater. You do not need to download it: copies of 2.0.0 and later
-              find it here on their own.
+            ## Changes since v2.9.1
+
+            ### Added
+            - Add-to-Queue (MP3) and (MP4) buttons; queue no longer auto-starts on add.
+            - Select All / Deselect All in the queue page.
+            - DownloaderPageMixin extraction.
+            - README with run/test/build instructions.
+
+            ### Fixed
+            - MP4 queue items no longer skipped due to prior MP3 history.
+            - Queue add button overlap and double-add.
+            - Scrollbar hover reveal and transparent scroll-well canvas color.
+            - Crimson theme hover contrast.
+            - AEP target-year radio chips wrap so 2026 is visible.
+            - Queue toolbar split into two rows; bottom padding increased.
+            - Tooltips disabled by default.
+            - Engine card spacing in Performance page.
+            - Inno Setup install step PowerShell syntax.
+
+            ### Changed
+            - Queue toolbar simplified.
+            - Renamed repository to Tunelab.
+
+            * `mysetup*.exe` — the installer.
+            * `UniversalAudioStudio_*_update.zip` — used by the in-app updater.
 
             Installed copies check this Release automatically and update
             themselves.
-
-            ## What's new in 2.8.0
-
-            ### The downloader engine updates itself
-            yt-dlp - the engine that actually fetches video - is the one
-            thing that breaks when sites change, so it now keeps itself
-            current. Packaged installs check once a day and install an
-            available engine update on startup, and the Update Center has
-            a new "Downloader engine (yt-dlp)" card with the live version
-            number and a one-click update. A checkbox lets you turn the
-            automatic part off; the app never silently rewrites anything
-            outside its own data folder.
-
-            ### Finished files play everywhere
-            Downloads now pick the codec first (H.264 video, AAC audio)
-            instead of chasing the highest resolution. The file that lands
-            in your folder plays in any player, on any device, and no
-            longer needs a separate conversion step afterwards.
-
-            ### The After Effects re-encode is gone
-            Because files are H.264/AAC straight from the download, the
-            old "re-encode for compatibility" pass is removed. What you
-            download is the final file - nothing is rewritten after the
-            fact, so there is nothing left to go wrong.
-
-# Google Drive is being retired rather than mirrored to - see RELEASE.md.
