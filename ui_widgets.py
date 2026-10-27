@@ -155,10 +155,29 @@ def hide_scrollbar_until_hover(bar, fill: str, handle: str, accent: str) -> None
     """
     try:
         bar.configure(fg_color=fill, button_color=fill,
-                      button_hover_color=fill)
+                      button_hover_color=handle)
         setattr(bar, "_sb_fill", fill)
-        setattr(bar, "_sb_handle", fill)
-        setattr(bar, "_sb_accent", fill)
+        setattr(bar, "_sb_handle", handle)
+        setattr(bar, "_sb_accent", accent)
+
+        def _show(_event=None):
+            try:
+                bar.configure(button_color=getattr(bar, "_sb_handle", handle))
+            except Exception:
+                pass
+
+        def _hide(_event=None):
+            try:
+                bar.configure(button_color=getattr(bar, "_sb_fill", fill))
+            except Exception:
+                pass
+
+        setattr(bar, "_sb_hover_handlers", (_show, _hide))
+
+        if not getattr(bar, "_sb_bound", False):
+            bar._canvas.bind("<Enter>", _show, add="+")
+            bar._canvas.bind("<Leave>", _hide, add="+")
+            bar._sb_bound = True
     except Exception:
         pass
 

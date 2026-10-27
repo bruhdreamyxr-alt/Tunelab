@@ -4485,7 +4485,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                         # card edges when the theme switches.
                         fill = (fg if isinstance(fg, str)
                                 and fg.lower() not in ("transparent", "")
-                                else pal.get("sidebar", UITheme.SIDEBAR_BG))
+                                else pal.get("surface", UITheme.SURFACE_BG))
                     widget._parent_canvas.configure(bg=fill)
                     # The frame itself is a bare tkinter.Frame; CTk repaints it
                     # in the same two lines it uses internally.
