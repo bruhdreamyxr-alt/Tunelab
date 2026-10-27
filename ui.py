@@ -1120,13 +1120,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         controls_row.pack(pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
 
         self.btn_add_to_queue = ctk.CTkButton(
-            controls_row, text="➕ Add to Queue (MP3)", width=150, height=UITheme.H_SM,
+            controls_row, text="➕ Add to Queue (MP3)", width=200, height=UITheme.H_SM,
             command=self._add_current_to_queue)
         self.btn_add_to_queue.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_add_to_queue, "secondary")
 
         self.btn_add_to_queue_video = ctk.CTkButton(
-            controls_row, text="➕ Add to Queue (MP4)", width=150, height=UITheme.H_SM,
+            controls_row, text="➕ Add to Queue (MP4)", width=200, height=UITheme.H_SM,
             command=self._add_current_to_queue_video)
         self.btn_add_to_queue_video.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_add_to_queue_video, "secondary")
