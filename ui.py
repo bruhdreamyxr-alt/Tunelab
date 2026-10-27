@@ -1125,6 +1125,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.btn_add_to_queue.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_add_to_queue, "secondary")
 
+        self.btn_add_to_queue_video = ctk.CTkButton(
+            controls_row, text="➕ Add to Queue (Video)", width=150, height=UITheme.H_SM,
+            command=self._add_current_to_queue_video)
+        self.btn_add_to_queue_video.pack(side="left", padx=(0, 8))
+        self._style_button(self.btn_add_to_queue_video, "secondary")
+
+
         self.btn_edit_tags = ctk.CTkButton(
             controls_row, text="Edit Tags", width=100, height=UITheme.H_SM,
             command=self._open_tag_editor, state="disabled")
@@ -1284,14 +1291,18 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self._start_worker(self.download_mp3)
         return "break"
 
+    def _add_current_to_queue_video(self):
+        """Add the current URL(s) to the queue as video (MP4)."""
+        raw = self.url_entry.get().strip()
+        if not raw:
+            self.show_toast("Please enter a URL first.", "warning")
+            return
+        urls = self._split_input_urls(raw)
+        if not urls:
+            self.show_toast("No valid URLs found.", "warning")
+            return
     def _add_current_to_queue(self):
-        """Add the current URL(s) to the queue without starting download.
-
-        Supports bulk paste (one URL per line, or comma/semicolon separated)
-        and auto-expands playlist/collection URLs into their individual tracks
-        so a pasted YouTube/Spotify/SoundCloud playlist fills the queue instead
-        of downloading a single item.
-        """
+        """Add the current URL(s) to the queue without starting download (audio)."""
         raw = self.url_entry.get().strip()
         if not raw:
             self.show_toast("Please enter a URL first.", "warning")
@@ -1305,6 +1316,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self._show_error_dialog("Queue Error", "Queue manager is not available.")
             return
         self._enqueue_urls(urls, is_video=False)
+
+
+        self._init_queue_manager()
+        if not self._queue_manager:
+            self._show_error_dialog("Queue Error", "Queue manager is not available.")
+            return
+        self._enqueue_urls(urls, is_video=True)
+
 
     @staticmethod
     def _split_input_urls(raw: str) -> list[str]:
@@ -4593,3 +4612,5 @@ if __name__ == "__main__":
 
     _setup_logging()
     main.run(UniversalAudioStudio)
+
+
