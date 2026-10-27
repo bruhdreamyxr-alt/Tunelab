@@ -135,6 +135,13 @@ jobs:
 
       - name: List what will be published
         run: ls -lh release-files
+      - name: Write the legacy Google Drive manifest
+        run: |
+          python tools/make_update_manifest.py \
+            --release-dir release-files \
+            --repo "${{ github.repository }}" \
+            --tag "${{ github.ref_name }}"
+
       - name: Attach everything to a Release
         uses: softprops/action-gh-release@v3
         with:
