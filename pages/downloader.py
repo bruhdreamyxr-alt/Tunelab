@@ -5,11 +5,12 @@ first pass is a stub mixin that only declares the names the shell owns; the
 handlers and builders move here in later steps.
 """
 
+import logging
 from typing import Any
 
-import customtkinter as ctk
+import downloader
 
-from ui_theme import UITheme
+logger = logging.getLogger("universal_audio_studio.pages.downloader")
 
 
 class DownloaderPageMixin:
@@ -47,5 +48,11 @@ class DownloaderPageMixin:
     update_progress_bar: Any
     url_entry: Any
 
-    # Placeholder so the mixin is importable and instantiable as a type.
-    _downloader_page_stub: bool = True
+    def _update_save_folder_label(self):
+        try:
+            self.save_folder_lbl.configure(
+                text=f"Saves to: {downloader.get_download_folder()}"
+            )
+        except Exception:
+            logger.debug("Save-folder label update failed", exc_info=True)
+

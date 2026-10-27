@@ -1705,13 +1705,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.show_toast("Tags updated successfully.", "success")
 
 
-    def _update_save_folder_label(self):
-        try:
-            self.save_folder_lbl.configure(
-                text=f"Saves to: {downloader.get_download_folder()}"
-            )
-        except Exception:
-            logger.debug("Save-folder label update failed", exc_info=True)
+
 
     def _choose_save_folder(self):
         start = downloader.get_download_folder()
