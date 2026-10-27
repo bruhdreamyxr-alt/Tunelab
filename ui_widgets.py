@@ -307,9 +307,9 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._paint(index)
 
     def select_set(self, index: int) -> None:
-        """Move the highlight without a click - the listbox spelling.
+        """Move the highlight without a click - the listbox spelling."""
+        self._select(index)
 
-        Reordering a row puts it somewhere new, and the highlight has to go
     def select_all(self) -> None:
         self._select_all_mode = True
         self._selected = None
@@ -325,11 +325,6 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._selected = None
         for i in range(len(self._rows)):
             self._paint(i)
-
-        with it: leaving the selection behind would mean the next action
-        applies to whatever row happens to land on the old index.
-        """
-        self._select(index)
 
     def _paint(self, i: int) -> None:
         if not (0 <= i < len(self._rows)):
