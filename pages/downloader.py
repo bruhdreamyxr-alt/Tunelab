@@ -98,3 +98,12 @@ class DownloaderPageMixin:
         except Exception:
             pass
         os._exit(0)
+
+    def _cancel_active_download(self):
+        """Ask the running download worker to stop (cooperative cancellation)."""
+        requested = downloader.request_cancel_download()
+        if not requested:
+            return
+        self.update_dl_status("Cancelling...", "#f39c12")
+        self.update_dl_detail("Waiting for the current download to stop...", "#95a5a6")
+        self.btn_cancel_download.configure(state="disabled")
