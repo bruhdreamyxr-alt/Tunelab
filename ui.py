@@ -136,9 +136,11 @@ from ui_widgets import (  # noqa: E402  (after the ctk import)
 from pages.history import HistoryPageMixin  # noqa: E402
 from pages.queue import QueuePageMixin  # noqa: E402
 from pages.updates import UpdatesPageMixin  # noqa: E402
+from pages.downloader import DownloaderPageMixin  # noqa: E402
 
 class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
-                          HistoryPageMixin, UpdatesPageMixin):
+                          HistoryPageMixin, UpdatesPageMixin,
+                          DownloaderPageMixin):
     # -----------------
     # Persistent UI Preferences
     # -----------------
