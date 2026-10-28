@@ -68,10 +68,10 @@ def _write_ffx(d, name="Fade In.ffx", **kw):
 class TargetVersionsTests(unittest.TestCase):
     def test_five_years_offered(self):
         self.assertEqual(sorted(aep_convert.TARGET_VERSIONS),
-                         [2022, 2023, 2024, 2025, 2026])
+                         [2023, 2024, 2025, 2026])
 
     def test_years_are_distinct_releases(self):
-        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 5)
+        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 4)
 
     def test_describe_version_names_the_year(self):
         self.assertIn("2024", aep_convert.describe_version("24.0x42"))
@@ -285,15 +285,6 @@ class FfxTests(unittest.TestCase):
             self.assertEqual(before[32:], after[32:])
             with open(src, "rb") as f:
                 self.assertEqual(f.read(), before)  # original untouched
-
-
-    def test_convert_to_2022_stamps_the_2022_pair(self):
-        with tempfile.TemporaryDirectory() as d:
-            src = _write_ffx(d, fmt=97, sub=2)
-            res = aep_convert.convert(src, 2022)
-            with open(res["out_path"], "rb") as f:
-                data = f.read()
-            self.assertEqual(struct.unpack_from(">II", data, 24), (93, 43))
 
     def test_unknown_year_refused(self):
         with tempfile.TemporaryDirectory() as d:

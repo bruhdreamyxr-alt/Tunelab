@@ -805,7 +805,7 @@ class UiSplitsMixin:
         chips = ctk.CTkFrame(tgt_card, fg_color="transparent")
         chips.pack(fill="x", padx=16, pady=(0, 4))
         self.aep_year_buttons = []
-        for i, _yr in enumerate((2022, 2023, 2024, 2025, 2026)):
+        for i, _yr in enumerate((2023, 2024, 2025, 2026)):
             rb = ctk.CTkRadioButton(
                 chips, text=str(_yr), variable=self.aep_year_var,
                 value=_yr, command=self._on_aep_year_change)
