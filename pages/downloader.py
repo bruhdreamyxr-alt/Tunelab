@@ -247,20 +247,21 @@ class DownloaderPageMixin:
         # Defer the error so a fallback download that ultimately succeeds
         # (e.g. Instagram "no video formats" then a fallback) cancels it.
         try:
-            self._pending_dl_error_id = self.after(1500, lambda: self._finalize_download(None, err))
+            self._pending_dl_error_id = self.after(1500, lambda: self._finalize_download(downloader.get_download_folder(), err))
         except Exception:
             self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
         self._pending_dl_error_id = None
         # Some extractors (e.g. Instagram) report "no video formats" for the
-        # primary format selection but still download a fallback. Treat a
-        # finished file as success so the user isn't shown a spurious error.
+        # primary format selection but still download a fallback. If a file was
+        # produced, drop the spurious error and do nothing else (the success
+        # path, if any, handles the rest).
         if err and folder and os.path.isdir(str(folder)):
             try:
                 if any(os.path.isfile(os.path.join(str(folder), n))
                        for n in os.listdir(str(folder))):
-                    err = None
+                    return
             except Exception:
                 pass
         if err == "__cancelled__":
