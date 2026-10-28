@@ -239,6 +239,16 @@ class DownloaderPageMixin:
         self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
+        # Some extractors (e.g. Instagram) report "no video formats" for the
+        # primary format selection but still download a fallback. Treat a
+        # finished file as success so the user isn't shown a spurious error.
+        if err and folder and os.path.isdir(str(folder)):
+            try:
+                if any(os.path.isfile(os.path.join(str(folder), n))
+                       for n in os.listdir(str(folder))):
+                    err = None
+            except Exception:
+                pass
         if err == "__cancelled__":
             self.update_dl_status("Cancelled", "#f39c12")
             self.progress_bar.set(0)
