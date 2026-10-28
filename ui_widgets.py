@@ -812,13 +812,6 @@ class UiSplitsMixin:
             rb.grid(row=i // 3, column=i % 3, padx=(0, 14), pady=(0, 4),
                     sticky="w")
             self.aep_year_buttons.append((_yr, rb))
-        ctk.CTkLabel(
-            tgt_card,
-            text="The copy is re-stamped for that year's After Effects. "
-                 "Going older never migrates effects or features, so newer "
-                 "content - or a preset's newer effects - may not work "
-                 "there. The original is untouched.",
-            font=UITheme.F(11), anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
         # Destination + Convert card.
         out_card = self._settings_card(scroll, "Destination")
