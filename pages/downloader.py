@@ -366,6 +366,7 @@ class DownloaderPageMixin:
                 "status": "done" if not err else "failed",
                 "filepath": str(resolved_path) if resolved_path else (str(folder) if folder else ""),
                 "timestamp": __import__("time").time(),
+                "completed_at": __import__("time").time(),
                 "is_video": bool(is_video),
             }
             self._queue_manager.upsert_history_entry(entry)
