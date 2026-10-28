@@ -312,7 +312,7 @@ class HistoryPageMixin:
         reverse = self._history_sort_reverse
         def _sort_key(entry):
             if sort_key == "date":
-                return entry.get("completed_at", 0) or 0
+                return entry.get("completed_at", 0) or entry.get("timestamp", 0) or 0
             elif sort_key == "title":
                 return (entry.get("title") or entry.get("url") or "").lower()
             elif sort_key == "status":
