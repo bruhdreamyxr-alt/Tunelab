@@ -255,13 +255,12 @@ class DownloaderPageMixin:
         self._pending_dl_error_id = None
         # Some extractors (e.g. Instagram) report "no video formats" for the
         # primary format selection but still download a fallback. If a file was
-        # produced, drop the spurious error and do nothing else (the success
-        # path, if any, handles the rest).
+        # produced, treat it as success.
         if err and folder and os.path.isdir(str(folder)):
             try:
                 if any(os.path.isfile(os.path.join(str(folder), n))
                        for n in os.listdir(str(folder))):
-                    return
+                    err = None
             except Exception:
                 pass
         if err == "__cancelled__":
