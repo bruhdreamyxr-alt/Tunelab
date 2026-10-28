@@ -233,12 +233,26 @@ class DownloaderPageMixin:
             self.set_download_buttons_state(True)
 
     def on_dl_success(self, folder):
+        # Cancel any pending (deferred) error display.
+        pending = getattr(self, "_pending_dl_error_id", None)
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except Exception:
+                pass
+            self._pending_dl_error_id = None
         self.after(0, lambda: self._finalize_download(folder, None))
 
     def on_dl_error(self, err):
-        self.after(0, lambda: self._finalize_download(None, err))
+        # Defer the error so a fallback download that ultimately succeeds
+        # (e.g. Instagram "no video formats" then a fallback) cancels it.
+        try:
+            self._pending_dl_error_id = self.after(1500, lambda: self._finalize_download(None, err))
+        except Exception:
+            self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
+        self._pending_dl_error_id = None
         # Some extractors (e.g. Instagram) report "no video formats" for the
         # primary format selection but still download a fallback. Treat a
         # finished file as success so the user isn't shown a spurious error.
