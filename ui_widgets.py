@@ -818,8 +818,7 @@ class UiSplitsMixin:
                  "Going older never migrates effects or features, so newer "
                  "content - or a preset's newer effects - may not work "
                  "there. The original is untouched.",
-            font=UITheme.F(11), wraplength=600, justify="left",
-            anchor="w").pack(fill="x", padx=16, pady=(0, 10))
+            font=UITheme.F(11), anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
         # Destination + Convert card.
         out_card = self._settings_card(scroll, "Destination")
