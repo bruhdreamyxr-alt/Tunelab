@@ -47,8 +47,6 @@ from typing import Optional
 # Adobe shipped as the year's baseline; picking the baseline keeps the
 # converted file openable across that whole release train, not just one patch.
 TARGET_VERSIONS = {
-    2020: "17.0x53",
-    2021: "18.0x53",
     2022: "22.0x53",
     2023: "23.0x53",
     2024: "24.0x42",
@@ -59,7 +57,7 @@ TARGET_VERSIONS = {
 # The AE major that each release year corresponds to. Adobe jumped from a
 # 2021 release (major 21) straight to a 2022 major, so the numbers are not
 # simply the last two digits of the year.
-_MAJOR_BY_YEAR = {2020: 17, 2021: 18, 2022: 22, 2023: 23, 2024: 24, 2025: 25, 2026: 26}
+_MAJOR_BY_YEAR = {2022: 22, 2023: 23, 2024: 24, 2025: 25, 2026: 26}
 _YEAR_BY_MAJOR = {major: year for year, major in _MAJOR_BY_YEAR.items()}
 
 # --- Animation presets (.ffx) ------------------------------------------------
@@ -75,8 +73,6 @@ _FFX_MARKER = 3
 # from py_aep's FORMAT_VERSIONS - the same baselines TARGET_VERSIONS picks
 # for projects. format is the AE major plus 71 for 2022+ (93 = 22 ... 97 = 26).
 _FFX_STAMPS = {
-    2020: (93, 22),
-    2021: (93, 29),
     2022: (93, 43),
     2023: (94, 9),
     2024: (95, 6),

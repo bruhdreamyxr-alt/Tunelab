@@ -68,10 +68,10 @@ def _write_ffx(d, name="Fade In.ffx", **kw):
 class TargetVersionsTests(unittest.TestCase):
     def test_five_years_offered(self):
         self.assertEqual(sorted(aep_convert.TARGET_VERSIONS),
-                         [2020, 2021, 2022, 2023, 2024, 2025, 2026])
+                         [2022, 2023, 2024, 2025, 2026])
 
     def test_years_are_distinct_releases(self):
-        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 7)
+        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 5)
 
     def test_describe_version_names_the_year(self):
         self.assertIn("2024", aep_convert.describe_version("24.0x42"))
