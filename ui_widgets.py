@@ -804,12 +804,14 @@ class UiSplitsMixin:
         self.aep_year_var = tk.IntVar(value=2026)
         chips = ctk.CTkFrame(tgt_card, fg_color="transparent")
         chips.pack(fill="x", padx=16, pady=(0, 4))
+        self.aep_year_buttons = []
         for i, _yr in enumerate((2022, 2023, 2024, 2025, 2026)):
             rb = ctk.CTkRadioButton(
                 chips, text=str(_yr), variable=self.aep_year_var,
                 value=_yr, command=self._on_aep_year_change)
             rb.grid(row=i // 3, column=i % 3, padx=(0, 14), pady=(0, 4),
                     sticky="w")
+            self.aep_year_buttons.append((_yr, rb))
         ctk.CTkLabel(
             tgt_card,
             text="The copy is re-stamped for that year's After Effects. "
@@ -886,6 +888,17 @@ class UiSplitsMixin:
         try:
             self.aep_src_lbl_version = version
             self.aep_src_ver_lbl.configure(text=label)
+        except Exception:
+            pass
+        # Disable target years older than the source release: the converter
+        # refuses those (matte layer id layout differs) and would only error.
+        try:
+            src_year = int(version) if version else None
+            if src_year is not None:
+                for yr, btn in getattr(self, "aep_year_buttons", []):
+                    btn.configure(state="disabled" if yr < src_year else "normal")
+                if src_year > int(self.aep_year_var.get()):
+                    self.aep_year_var.set(src_year)
         except Exception:
             pass
         self._refresh_aep_dest_label()
