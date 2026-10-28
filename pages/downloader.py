@@ -283,7 +283,14 @@ class DownloaderPageMixin:
             self.update_dl_detail(str(folder), "#95a5a6")
             self._bump_completion_badge()
             if folder and os.path.isdir(str(folder)):
-                downloaded_file = self._newest_media_file(folder)
+                if getattr(self, "_last_dl_was_video", False):
+                    vid_exts = {'.mp4', '.mkv', '.webm', '.mov', '.avi'}
+                    cands = [os.path.join(str(folder), n) for n in os.listdir(str(folder))
+                             if os.path.isfile(os.path.join(str(folder), n))
+                             and os.path.splitext(n)[1].lower() in vid_exts]
+                    downloaded_file = max(cands, key=os.path.getmtime) if cands else None
+                else:
+                    downloaded_file = self._newest_media_file(folder)
                 if downloaded_file:
                     self._last_downloaded_file = downloaded_file
                     self._refresh_tag_target()
