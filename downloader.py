@@ -284,6 +284,7 @@ DEFAULT_PERF_CONFIG = {
     'concurrent_fragment_downloads': 8,
     'http_chunk_size': 1 << 20,
     'max_video_resolution': 'Best (up to 4K)',
+    'cookies_file': '',
 }
 
 VIDEO_RESOLUTION_OPTIONS = ['Best (up to 4K)', '1080p', '720p', '480p']
@@ -1310,6 +1311,10 @@ def build_fast_yt_dlp_options(base_dir, output_template, audio_only: bool = Fals
         # plays but After Effects rejects — and with no conversion step
         # afterwards, codec must outrank resolution (see
         # VIDEO_FORMAT_SORT_FIELDS): the file is final the moment it lands.
+        # Cookies (optional) for age-gated/region-blocked videos.
+        _cf = str(cfg.get('cookies_file', '') or '').strip()
+        if _cf and os.path.isfile(_cf):
+            ydl_opts['cookiefile'] = _cf
         ydl_opts['format_sort'] = list(VIDEO_FORMAT_SORT_FIELDS)
 
     if audio_only:
@@ -2241,6 +2246,11 @@ def _fallback_download_with_ytdlp_exe(
             # is unnecessary as well as harmful.
             cmd += ['--external-downloader', 'aria2c',
                     '--external-downloader-args', f'-c -x {conn} -s {conn} -k 1M']
+
+    # Cookies (optional) for age-gated/region-blocked videos.
+    _cf = str(cfg.get('cookies_file', '') or '').strip()
+    if _cf and os.path.isfile(_cf):
+        cmd += ['--cookies', _cf]
 
     # Format selection
     if format_override is not None:

@@ -202,6 +202,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             "aria2_connections": 16,
             "concurrent_fragment_downloads": 8,
             "max_video_resolution": "Best (up to 4K)",
+            "cookies_file": "",
             # The AEP converter's Browse dialog opens here. Without it the
             # dialog restarts in the working directory every time, and
             # project files almost always live in one folder.
@@ -2311,6 +2312,23 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.video_res_menu.pack(anchor="w", padx=16, pady=(0, 4))
         self._style_option_menu(self.video_res_menu)
 
+        # Cookies file (optional) for age-gated/region-blocked videos.
+        ctk.CTkLabel(tuning, text="Cookies file (optional, Netscape format):",
+                     font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(6, 0))
+        self.cookies_file_var = tk.StringVar(
+            value=str(self._prefs.get("cookies_file", "")))
+        self.cookies_file_entry = ctk.CTkEntry(
+            tuning, textvariable=self.cookies_file_var, width=320)
+        self.cookies_file_entry.pack(anchor="w", padx=16, pady=(0, 2))
+        self.cookies_browse_btn = ctk.CTkButton(
+            tuning, text="Browse", width=80,
+            command=self._choose_cookies_file)
+        self.cookies_browse_btn.pack(anchor="w", padx=16, pady=(0, 2))
+        self._style_button(self.cookies_browse_btn, "ghost", bordered=True)
+        ctk.CTkButton(
+            tuning, text="Clear", width=80,
+            command=self._clear_cookies_file).pack(anchor="w", padx=16, pady=(0, 6))
+
         self.apply_perf_btn = ctk.CTkButton(tuning, text="Apply Performance Settings", command=self.apply_performance_settings, width=260)
         self.apply_perf_btn.pack(anchor="w", padx=16, pady=(6, 14))
         self._style_button(self.apply_perf_btn, "primary")
@@ -2369,6 +2387,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             'use_aria2': bool(self.aria2_var.get()),
             'aria2_connections': downloader._clamp_aria2_connections(self.aria2_conn_slider.get()),
             'concurrent_fragment_downloads': int(self.concurrent_frag_slider.get()),
+            'cookies_file': str(self.cookies_file_var.get()).strip(),
         }
         try:
             downloader.set_performance_config(cfg)
@@ -2376,6 +2395,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self._set_pref('use_aria2', cfg['use_aria2'])
             self._set_pref('aria2_connections', cfg['aria2_connections'])
             self._set_pref('concurrent_fragment_downloads', cfg['concurrent_fragment_downloads'])
+            self._set_pref('cookies_file', cfg['cookies_file'])
             self.perf_status.configure(text=f"Current: aria2={cfg['use_aria2']}, conns={cfg['aria2_connections']}, frags={cfg['concurrent_fragment_downloads']}")
             # Honest feedback
             _aria2_path = downloader.get_fast_downloader_path() if cfg['use_aria2'] else None
@@ -2425,6 +2445,18 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             + " (falls back to YouTube when unavailable).",
             "#95a5a6",
         )
+
+    def _choose_cookies_file(self):
+        choice = filedialog.askopenfilename(
+            title="Select cookies file (Netscape format)",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if choice:
+            self.cookies_file_var.set(choice)
+            self.apply_performance_settings()
+
+    def _clear_cookies_file(self):
+        self.cookies_file_var.set("")
+        self.apply_performance_settings()
 
     def _on_video_res_change(self, value):
         """Persist the max video resolution preference live (no Apply needed)."""
