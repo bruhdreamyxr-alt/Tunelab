@@ -256,7 +256,7 @@ class DownloaderPageMixin:
         # Some extractors (e.g. Instagram) report "no video formats" for the
         # primary format selection but still download a fallback. If a file was
         # produced, treat it as success.
-        if err and folder and os.path.isdir(str(folder)):
+        if err and folder and os.path.isdir(str(folder)) and "no video formats" in str(err).lower():
             try:
                 if any(os.path.isfile(os.path.join(str(folder), n))
                        for n in os.listdir(str(folder))):
