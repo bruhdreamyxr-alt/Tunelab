@@ -267,6 +267,17 @@ class DownloaderPageMixin:
             self.update_dl_status("Cancelled", "#f39c12")
             self.progress_bar.set(0)
             self.update_dl_detail("", "#95a5a6")
+            # Remove leftover partial/fragment files from the cancelled download.
+            try:
+                folder = downloader.get_download_folder()
+                for name in os.listdir(folder):
+                    if ".part" in name:
+                        try:
+                            os.remove(os.path.join(folder, name))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             self.show_toast("Download cancelled", "warning")
         elif err:
             cleaned_err = downloader._strip_ansi(err) if hasattr(downloader, '_strip_ansi') else str(err)
