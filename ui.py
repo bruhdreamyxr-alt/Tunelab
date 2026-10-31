@@ -938,10 +938,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         self.btn_download = ctk.CTkButton(
             action_row, text="Download", width=160, height=UITheme.H_LG,
-            cursor="hand2", command=self._download_current,
-            fg_color=UITheme.COLOR_PINK, hover_color=UITheme.COLOR_PINK_HOVER,
-            text_color="#ffffff", corner_radius=UITheme.RADIUS_MD)
+            cursor="hand2", command=self._download_current)
         self.btn_download.pack(side="left", padx=6, expand=True, fill="x")
+        self._style_button(self.btn_download, "primary")
 
         self.btn_add_to_queue = ctk.CTkButton(
             action_row, text="Add to Queue", width=140, height=UITheme.H_LG,
@@ -1311,14 +1310,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._dl_format.set(fmt)
         pal = getattr(self, "_palette", {}) or {}
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
-        inactive_fg = pal.get("text", "#ecf0f1")
-        inactive_border = pal.get("hover", UITheme.SIDEBAR_HOVER)
-        active_fill = pal.get("sidebar_active", UITheme.SIDEBAR_ACTIVE)
+        accent_hover = pal.get("accent_hover", UITheme.COLOR_PRIMARY)
+        inactive_fg = pal.get("sub", UITheme.COLOR_GRAY)
         hover_fill = pal.get("hover", UITheme.SIDEBAR_HOVER)
         text_color = pal.get("text", "#ecf0f1")
         if fmt == "audio":
-            self.btn_fmt_audio.configure(fg_color=active_fill, border_color=accent, text_color=accent, border_width=1, hover_color=hover_fill)
-            self.btn_fmt_video.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1, hover_color=hover_fill)
+            self.btn_fmt_audio.configure(fg_color=accent, text_color="#ffffff", hover_color=accent_hover, border_width=0)
+            self.btn_fmt_video.configure(fg_color="transparent", text_color=inactive_fg, border_width=0, hover_color=hover_fill)
             self.btn_fmt_video.bind("<Enter>", lambda e: self.btn_fmt_video.configure(text_color=text_color))
             self.btn_fmt_video.bind("<Leave>", lambda e: self.btn_fmt_video.configure(text_color=inactive_fg))
             try:
@@ -1332,8 +1330,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             except Exception:
                 pass
         else:
-            self.btn_fmt_audio.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1, hover_color=hover_fill)
-            self.btn_fmt_video.configure(fg_color=active_fill, border_color=accent, text_color=accent, border_width=1, hover_color=hover_fill)
+            self.btn_fmt_audio.configure(fg_color="transparent", text_color=inactive_fg, border_width=0, hover_color=hover_fill)
+            self.btn_fmt_video.configure(fg_color=accent, text_color="#ffffff", border_width=0, hover_color=accent_hover)
             self.btn_fmt_audio.bind("<Enter>", lambda e: self.btn_fmt_audio.configure(text_color=text_color))
             self.btn_fmt_audio.bind("<Leave>", lambda e: self.btn_fmt_audio.configure(text_color=inactive_fg))
             try:
