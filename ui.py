@@ -984,6 +984,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.bind(
             "<<Paste>>", lambda e: self.after(1, self._sync_clear_btn)
         )
+        pal = getattr(self, "_palette", {}) or {}
+        pill_bg = pal.get("sidebar_active", UITheme.SIDEBAR_ACTIVE)
+
         self._status_pill = ctk.CTkFrame(
             self.tab_downloader,
             corner_radius=15,
