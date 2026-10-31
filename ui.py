@@ -897,30 +897,33 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         self._url_clear_btn_visible = False
 
-        # Row 1: the two download actions side by side (they used to be two
-        # more stacked full-width rows). MP3 is the screen's one accent.
+        # Format toggle + single Download / Add to Queue.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        action_row.pack(pady=(0, UITheme.RHYTHM))
+        action_row.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X, fill="x")
 
-        self.btn_download_mp3 = ctk.CTkButton(
-            action_row,
-            text="Download Audio (MP3)",
-            width=200, height=UITheme.H_LG,
-            cursor="hand2",
-            command=lambda: self._start_worker(self.download_mp3)
-        )
-        self.btn_download_mp3.pack(side="left", padx=6)
-        self._style_button(self.btn_download_mp3, "primary")
+        self._dl_format = tk.StringVar(value="audio")
+        self.btn_fmt_audio = ctk.CTkButton(
+            action_row, text="Audio", width=90, height=UITheme.H_SM,
+            command=lambda: self._set_dl_format("audio"))
+        self.btn_fmt_audio.pack(side="left", padx=(0, 4))
+        self._style_button(self.btn_fmt_audio, "primary")
+        self.btn_fmt_video = ctk.CTkButton(
+            action_row, text="Video", width=90, height=UITheme.H_SM,
+            command=lambda: self._set_dl_format("video"))
+        self.btn_fmt_video.pack(side="left", padx=(0, 12))
+        self._style_button(self.btn_fmt_video, "ghost", bordered=True)
 
-        self.btn_download_mp4 = ctk.CTkButton(
-            action_row,
-            text="Download Video (MP4)",
-            width=200, height=UITheme.H_LG,
-            cursor="hand2",
-            command=lambda: self._start_worker(self.download_mp4)
-        )
-        self.btn_download_mp4.pack(side="left", padx=6)
-        self._style_button(self.btn_download_mp4, "primary")
+        self.btn_download = ctk.CTkButton(
+            action_row, text="Download", width=160, height=UITheme.H_LG,
+            cursor="hand2", command=self._download_current)
+        self.btn_download.pack(side="left", padx=6)
+        self._style_button(self.btn_download, "primary")
+
+        self.btn_add_to_queue = ctk.CTkButton(
+            action_row, text="Add to Queue", width=140, height=UITheme.H_LG,
+            cursor="hand2", command=self._add_current_to_queue)
+        self.btn_add_to_queue.pack(side="left", padx=6)
+        self._style_button(self.btn_add_to_queue, "secondary")
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
@@ -945,10 +948,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.btn_stop_audio.grid(row=0, column=1, padx=4)
         self._style_button(self.btn_stop_audio, "danger", icon="stop")
-        # Hidden until a preview is actually running. A disabled danger button
-        # still reads as "press this to stop something" and put two of them in
-        # the toolbar permanently, so the row advertised controls that had
-        # nothing to control.
         self.btn_stop_audio.grid_remove()
 
         self.btn_preview_video = ctk.CTkButton(
@@ -972,7 +971,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._style_button(self.btn_stop_video, "danger", icon="stop")
         self.btn_stop_video.grid_remove()
 
-        self.url_entry.bind("<Enter>", lambda e: self._set_hover_detail("Paste link or search song. Spotify links are auto-converted.", "#bdc3c7"))
         self.url_entry.bind("<Leave>", lambda e: self._restore_hover_detail())
         # Enter = the obvious next action: one input downloads right away,
         # a multi-URL paste goes to the queue. (#1 on the UI wish list.)
@@ -986,19 +984,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.bind(
             "<<Paste>>", lambda e: self.after(1, self._sync_clear_btn)
         )
-        self.btn_download_mp3.bind("<Enter>", lambda e: self._set_hover_detail("Download MP3 with artwork and metadata.", "#ecf0f1"))
-        self.btn_download_mp3.bind("<Leave>", lambda e: self._restore_hover_detail())
-        self.btn_download_mp4.bind("<Enter>", lambda e: self._set_hover_detail("Download high quality MP4 video.", "#ecf0f1"))
-        self.btn_download_mp4.bind("<Leave>", lambda e: self._restore_hover_detail())
-        self.btn_preview_audio.bind("<Enter>", lambda e: self._set_hover_detail("Listen to a quick 30s audio preview.", "#ecf0f1"))
-        self.btn_preview_audio.bind("<Leave>", lambda e: self._restore_hover_detail())
-        self.btn_preview_video.bind("<Enter>", lambda e: self._set_hover_detail("Preview video in the stream player.", "#ecf0f1"))
-        self.btn_preview_video.bind("<Leave>", lambda e: self._restore_hover_detail())
-
-        # Status pill: a true capsule (radius = half its height) + colored dot
-        # instead of bare text.
-        pal = getattr(self, "_palette", {}) or {}
-        pill_bg = pal.get("sidebar_active", UITheme.SIDEBAR_ACTIVE)
         self._status_pill = ctk.CTkFrame(
             self.tab_downloader,
             corner_radius=15,
@@ -1137,25 +1122,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.btn_add_to_queue_video.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_add_to_queue_video, "secondary")
 
-
-        self.btn_edit_tags = ctk.CTkButton(
-            controls_row, text="Edit Tags", width=100, height=UITheme.H_SM,
-            command=self._open_tag_editor, state="disabled")
-        self.btn_edit_tags.pack(side="left", padx=(8, 0))
-        self._style_button(self.btn_edit_tags, "secondary")
-
-        # This is the only control in the app that writes tags, so it says which
-        # file it is about to change. An unqualified "Edit Tags" left the user
-        # guessing whether it meant the track they were looking at, and the
-        # filename-template field in Performance read as a second way to do the
-        # same job when it only ever renamed the file on disk.
-        self.tag_target_lbl = ctk.CTkLabel(
-            self.tab_downloader, text="Tags are edited here, after a download.",
-            font=UITheme.F(10), text_color=pal.get("sub", "#95a5a6"),
-        )
-        self.tag_target_lbl.pack(pady=(0, UITheme.RHYTHM))
-        setattr(self.tag_target_lbl, "_theme_roles", {"text_color": "sub"})
-
         self._last_downloaded_file = None
         self._last_dl_was_video = False
 
@@ -1282,7 +1248,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         buttons do. Returns "break" so Tk doesn't beep or move focus.
         """
         try:
-            if str(self.btn_download_mp3.cget("state")) == "disabled":
+            if str(self.btn_download.cget("state")) == "disabled":
                 # A direct download is running (the buttons are disabled
                 # while it is); mirror the buttons instead of racing it.
                 return "break"
@@ -1317,6 +1283,33 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         except Exception as e:
             self.show_toast(f"Queue error: {e}", "error")
 
+    def _set_dl_format(self, fmt: str):
+        self._dl_format.set(fmt)
+        if fmt == "audio":
+            self._style_button(self.btn_fmt_audio, "primary")
+            self._style_button(self.btn_fmt_video, "ghost", bordered=True)
+            try:
+                self.fmt_option.configure(values=[p["label"] for p in downloader.AUDIO_FORMATS.values()])
+                self.fmt_option.set(downloader.AUDIO_FORMATS.get(
+                    downloader.get_audio_format(), {"label": "MP3 (VBR High)"})["label"])
+            except Exception:
+                pass
+        else:
+            self._style_button(self.btn_fmt_audio, "ghost", bordered=True)
+            self._style_button(self.btn_fmt_video, "primary")
+            try:
+                self.fmt_option.configure(values=downloader.VIDEO_RESOLUTION_OPTIONS)
+                self.fmt_option.set(str(self._prefs.get("max_video_resolution", "Best (up to 4K)")))
+            except Exception:
+                pass
+
+    def _download_current(self):
+        if self._dl_format.get() == "video":
+            self._start_worker(self.download_mp4)
+        else:
+            self._start_worker(self.download_mp3)
+
+
     def _add_current_to_queue(self):
         """Add the current URL(s) to the queue without starting download (audio)."""
         import time
@@ -1336,7 +1329,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         if not self._queue_manager:
             self.show_toast("Queue manager is not available.", "error")
             return
-        self._enqueue_urls(urls, is_video=False)
+        self._enqueue_urls(urls, is_video=(self._dl_format.get() == "video"))
 
     @staticmethod
     def _split_input_urls(raw: str) -> list[str]:
@@ -1754,7 +1747,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         try:
             # set_download_buttons_state(False) disables these for the whole
             # duration of a direct download, so their state is the flag.
-            return str(self.btn_download_mp3.cget("state")) == "disabled"
+            return str(self.btn_download.cget("state")) == "disabled"
         except Exception:
             return False
 
