@@ -498,7 +498,7 @@ class UITheme:
     COLOR_PINK = "#e91e63"
     COLOR_PINK_HOVER = "#c2185b"
     # Segmented toggle (Audio | Video) colors - fixed constants.
-    TOGGLE_CONTAINER_BG = "#2a2a32"
+    TOGGLE_CONTAINER_BG = "#2c3e50"
     TOGGLE_CONTAINER_BORDER = "#3a3a44"
     TOGGLE_ACTIVE_FILL = "#3a1a2a"
     TOGGLE_ACTIVE_BORDER = "#e91e63"

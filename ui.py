@@ -1069,31 +1069,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#7f8c8d")
         self._pack_h_if_used(self.dl_speed_lbl, pady=(0, UITheme.RHYTHM))
 
-        # Unified save-path bar: button + current path in one centered row.
-        path_bar = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        path_bar.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
-        path_row = ctk.CTkFrame(path_bar, fg_color="transparent")
-        path_row.pack(anchor="center")
-        self.save_folder_lbl = ctk.CTkButton(
-            path_row,
-            text="",
-            width=320, height=UITheme.H_CTRL,
-            fg_color="transparent",
-            corner_radius=UITheme.RADIUS_MD,
-            cursor="hand2",
-            command=self._choose_save_folder,
-        )
-        self.save_folder_lbl.pack(side="left")
-        self._style_button(self.save_folder_lbl, "ghost", bordered=False, icon="folder")
-        self._update_save_folder_label()
+        # Options row: quality (left) + folder control (right), aligned to input width.
+        options_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
+        options_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
 
-        # Audio quality on its own row.
-        quality_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        quality_row.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X, fill="x")
-        self.quality_lbl = ctk.CTkLabel(quality_row, text="Audio quality:", font=UITheme.F(12))
+        self.quality_lbl = ctk.CTkLabel(options_row, text="Audio quality:", font=UITheme.F(12))
         self.quality_lbl.pack(side="left", padx=(0, 8))
         self.fmt_option = ctk.CTkOptionMenu(
-            quality_row,
+            options_row,
             width=190,
             values=[p["label"] for p in downloader.AUDIO_FORMATS.values()],
             command=self._on_dl_quality_change,
@@ -1105,13 +1088,29 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.fmt_option.pack(side="left")
         self._style_option_menu(self.fmt_option)
-        # Warm neutral surface (not blue sidebar_active).
         try:
             pal = getattr(self, "_palette", {}) or {}
             self.fmt_option.configure(fg_color=pal.get("surface", UITheme.SURFACE_BG),
                                       border_color=pal.get("hover", UITheme.SIDEBAR_HOVER))
         except Exception:
             pass
+
+        # Compact folder control on the right.
+        pal = getattr(self, "_palette", {}) or {}
+        self.save_folder_lbl = ctk.CTkButton(
+            options_row,
+            text="",
+            width=260, height=UITheme.H_CTRL,
+            fg_color=pal.get("surface", UITheme.SURFACE_BG),
+            hover_color=pal.get("hover", UITheme.SIDEBAR_HOVER),
+            corner_radius=UITheme.RADIUS_MD,
+            cursor="hand2",
+            command=self._choose_save_folder,
+            text_color=pal.get("text", "#ecf0f1"),
+        )
+        self.save_folder_lbl.pack(side="right")
+        self._style_button(self.save_folder_lbl, "ghost", bordered=True, icon="folder")
+        self._update_save_folder_label()
 
         # Outdated yt-dlp notice (hidden until a check finds one).
         self._ytdlp_notice_lbl = ctk.CTkLabel(
