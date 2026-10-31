@@ -1053,19 +1053,24 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._progress_row = progress_row = ctk.CTkFrame(
             self.tab_downloader, fg_color="transparent")
         progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        status_line = ctk.CTkFrame(progress_row, fg_color="transparent")
+        status_line.pack(fill="x")
+        self.dl_status = ctk.CTkLabel(status_line, text="Downloading...", font=UITheme.F(12, "bold"), anchor="w")
+        self.dl_status.pack(side="left")
+        self.dl_progress_text = ctk.CTkLabel(status_line, text="", font=UITheme.F(11), anchor="e")
+        self.dl_progress_text.pack(side="right")
         self.progress_bar = ctk.CTkProgressBar(progress_row, width=200)
         self.progress_bar.set(0)
-        self.progress_bar.pack(side="left", fill="x", expand=True)
+        self.progress_bar.pack(fill="x", pady=(2, 0))
         self.btn_cancel_download = ctk.CTkButton(
             progress_row,
-            text="Cancel Download",
-            width=150, height=UITheme.H_SM,
+            text="Cancel", width=80, height=UITheme.H_SM,
             cursor="hand2",
             command=self._cancel_active_download,
             state="disabled",
         )
-        self.btn_cancel_download.pack(side="left", padx=(10, 0))
-        self._style_button(self.btn_cancel_download, "danger", icon="stop")
+        self.btn_cancel_download.pack(anchor="e", pady=(2, 0))
+        self._style_button(self.btn_cancel_download, "danger", icon="close")
         progress_row.pack_forget()
 
         self.dl_detail = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#95a5a6")

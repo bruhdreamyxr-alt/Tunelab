@@ -367,6 +367,10 @@ class DownloaderPageMixin:
             if pct != getattr(self, "_last_title_pct", None):
                 self._last_title_pct = pct
                 self.title(f"TuneLab — {pct}%")
+            try:
+                self.dl_progress_text.configure(text=f"{pct}%")
+            except Exception:
+                pass
 
         self.after(0, _apply)
 
