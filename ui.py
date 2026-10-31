@@ -1277,9 +1277,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def _set_dl_format(self, fmt: str):
         self._dl_format.set(fmt)
+        accent = (getattr(self, "_palette", {}) or {}).get("accent", "#e91e63")
+        inactive_fg = UITheme.COLOR_GRAY
+        inactive_border = UITheme.SIDEBAR_HOVER
         if fmt == "audio":
-            self._style_button(self.btn_fmt_audio, "primary")
-            self._style_button(self.btn_fmt_video, "ghost", bordered=True)
+            self.btn_fmt_audio.configure(fg_color="transparent", border_color=accent, text_color=accent, border_width=1)
+            self.btn_fmt_video.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1)
             try:
                 self.fmt_option.configure(values=[p["label"] for p in downloader.AUDIO_FORMATS.values()])
                 self.fmt_option.set(downloader.AUDIO_FORMATS.get(
@@ -1287,8 +1290,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             except Exception:
                 pass
         else:
-            self._style_button(self.btn_fmt_audio, "ghost", bordered=True)
-            self._style_button(self.btn_fmt_video, "primary")
+            self.btn_fmt_audio.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1)
+            self.btn_fmt_video.configure(fg_color="transparent", border_color=accent, text_color=accent, border_width=1)
             try:
                 self.fmt_option.configure(values=downloader.VIDEO_RESOLUTION_OPTIONS)
                 self.fmt_option.set(str(self._prefs.get("max_video_resolution", "Best (up to 4K)")))
