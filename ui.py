@@ -1057,11 +1057,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#7f8c8d")
         self._pack_h_if_used(self.dl_speed_lbl, pady=(0, UITheme.RHYTHM))
 
-        # Unified save-path bar: button + current path in one row.
+        # Unified save-path bar: button + current path in one centered row.
         path_bar = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         path_bar.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
+        path_row = ctk.CTkFrame(path_bar, fg_color="transparent")
+        path_row.pack(anchor="center")
         self.btn_choose_folder = ctk.CTkButton(
-            path_bar,
+            path_row,
             text="Change Save Folder",
             width=175, height=UITheme.H_CTRL,
             cursor="hand2",
@@ -1070,13 +1072,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.btn_choose_folder.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_choose_folder, "secondary", icon="folder")
         self.save_folder_lbl = ctk.CTkLabel(
-            path_bar,
+            path_row,
             text="",
             font=UITheme.F(11),
             text_color="#95a5a6",
             anchor="w",
         )
-        self.save_folder_lbl.pack(side="left", fill="x", expand=True)
+        self.save_folder_lbl.pack(side="left")
         self._update_save_folder_label()
 
         # Audio quality on its own row.
