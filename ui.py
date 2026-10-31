@@ -286,6 +286,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         Also re-maximizes the window when it was closed that way: the state()
         read happens while the window is still withdrawn (before deiconify),
         and Tk applies the zoomed state when the window maps.
+        # Fixed-size window: ignore saved geometry.
+        return
+
         """
         geo = str(self._prefs.get("window_geometry", "") or "").strip()
         m = re.match(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$", geo)
@@ -545,8 +548,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         self.title("TuneLab")
         self._apply_app_icon()
-        # Let packed widgets determine natural size; no fixed geometry.
+        # Fixed-size window: no resizing, no maximize.
         self.minsize(800, 680)
+        self.maxsize(800, 680)
+        self.resizable(False, False)
+        # Center on screen.
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x = (sw - 800) // 2
+        y = (sh - 680) // 2
+        self.geometry(f"800x680+{x}+{y}")
 
         # Set window background to match theme (prevents white border)
         bg_color = self._palette.get('bg', '#2b2b2b')
