@@ -167,10 +167,13 @@ class DownloaderPageMixin:
 
     def set_download_buttons_state(self, enabled: bool):
         state = "normal" if enabled else "disabled"
-        self.after(0, lambda: self.btn_download_mp3.configure(state=state))
-        self.after(0, lambda: self.btn_download_mp4.configure(state=state))
+        label = "Download" if enabled else "Downloading..."
+        self.after(0, lambda: self.btn_download.configure(state=state, text=label))
         cancel_state = "disabled" if enabled else "normal"
-        self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
+        try:
+            self.after(0, lambda: self.btn_cancel_download.configure(state=cancel_state))
+        except Exception:
+            pass
         self._show_progress_row(not enabled)
 
     def _sync_clear_btn(self):

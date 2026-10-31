@@ -940,13 +940,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             cursor="hand2", command=self._download_current,
             fg_color=UITheme.COLOR_PINK, hover_color=UITheme.COLOR_PINK_HOVER,
             text_color="#ffffff", corner_radius=UITheme.RADIUS_MD)
-        self.btn_download.pack(side="left", padx=6)
+        self.btn_download.pack(side="left", padx=6, expand=True, fill="x")
 
         self.btn_add_to_queue = ctk.CTkButton(
             action_row, text="Add to Queue", width=140, height=UITheme.H_LG,
-            cursor="hand2", command=self._add_current_to_queue)
-        self.btn_add_to_queue.pack(side="left", padx=6)
-        self._style_button(self.btn_add_to_queue, "secondary")
+            cursor="hand2", command=self._add_current_to_queue,
+            fg_color=UITheme.SURFACE_BG, hover_color=UITheme.SIDEBAR_HOVER,
+            text_color=UITheme.COLOR_GRAY, corner_radius=UITheme.RADIUS_MD)
+        self.btn_add_to_queue.pack(side="left", padx=6, expand=True, fill="x")
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
@@ -1108,7 +1109,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             command=self._choose_save_folder,
             text_color=pal.get("text", "#ecf0f1"),
         )
-        self.save_folder_lbl.pack(side="right")
+        self.save_folder_lbl.pack(side="right", padx=(12, 0))
         self._style_button(self.save_folder_lbl, "ghost", bordered=True, icon="folder")
         self._update_save_folder_label()
 
