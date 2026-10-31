@@ -937,9 +937,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         self.btn_download = ctk.CTkButton(
             action_row, text="Download", width=160, height=UITheme.H_LG,
-            cursor="hand2", command=self._download_current)
+            cursor="hand2", command=self._download_current,
+            fg_color=UITheme.COLOR_PINK, hover_color=UITheme.COLOR_PINK_HOVER,
+            text_color="#ffffff", corner_radius=UITheme.RADIUS_MD)
         self.btn_download.pack(side="left", padx=6)
-        self._style_button(self.btn_download, "primary")
 
         self.btn_add_to_queue = ctk.CTkButton(
             action_row, text="Add to Queue", width=140, height=UITheme.H_LG,
@@ -1015,7 +1016,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             corner_radius=15,
             fg_color=pill_bg,
         )
-        self._status_pill.pack(pady=(0, UITheme.RHYTHM))
+        self._status_pill.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X)
         setattr(self._status_pill, "_theme_roles", {"fg_color": "sidebar_active"})
         self._status_dot = ctk.CTkLabel(
             self._status_pill, text="●", font=UITheme.F(10),
@@ -1073,19 +1074,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         path_bar.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
         path_row = ctk.CTkFrame(path_bar, fg_color="transparent")
         path_row.pack(anchor="center")
-        self.btn_choose_folder = ctk.CTkButton(
-            path_row,
-            text="Change Save Folder",
-            width=175, height=UITheme.H_CTRL,
-            cursor="hand2",
-            command=self._choose_save_folder,
-        )
-        self.btn_choose_folder.pack(side="left", padx=(0, 8))
-        self._style_button(self.btn_choose_folder, "secondary", icon="folder")
         self.save_folder_lbl = ctk.CTkButton(
             path_row,
             text="",
-            width=260, height=UITheme.H_CTRL,
+            width=320, height=UITheme.H_CTRL,
             fg_color="transparent",
             corner_radius=UITheme.RADIUS_MD,
             cursor="hand2",
@@ -1097,7 +1089,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         # Audio quality on its own row.
         quality_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        quality_row.pack(pady=(0, UITheme.RHYTHM))
+        quality_row.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X, fill="x")
         self.quality_lbl = ctk.CTkLabel(quality_row, text="Audio quality:", font=UITheme.F(12))
         self.quality_lbl.pack(side="left", padx=(0, 8))
         self.fmt_option = ctk.CTkOptionMenu(
@@ -1113,6 +1105,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.fmt_option.pack(side="left")
         self._style_option_menu(self.fmt_option)
+        # Warm neutral surface (not blue sidebar_active).
+        try:
+            pal = getattr(self, "_palette", {}) or {}
+            self.fmt_option.configure(fg_color=pal.get("surface", UITheme.SURFACE_BG),
+                                      border_color=pal.get("hover", UITheme.SIDEBAR_HOVER))
+        except Exception:
+            pass
 
         # Outdated yt-dlp notice (hidden until a check finds one).
         self._ytdlp_notice_lbl = ctk.CTkLabel(
