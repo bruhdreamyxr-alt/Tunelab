@@ -924,12 +924,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             toggle_container, text="Audio", width=80, height=UITheme.H_SM,
             corner_radius=UITheme.RADIUS_MD, border_width=0,
             fg_color="transparent", text_color=UITheme.TOGGLE_INACTIVE_TEXT,
+            hover_color=UITheme.TOGGLE_INACTIVE_HOVER_FILL,
             command=lambda: self._set_dl_format("audio"))
         self.btn_fmt_audio.pack(side="left", padx=2, pady=2)
         self.btn_fmt_video = ctk.CTkButton(
             toggle_container, text="Video", width=80, height=UITheme.H_SM,
             corner_radius=UITheme.RADIUS_MD, border_width=0,
             fg_color="transparent", text_color=UITheme.TOGGLE_INACTIVE_TEXT,
+            hover_color=UITheme.TOGGLE_INACTIVE_HOVER_FILL,
             command=lambda: self._set_dl_format("video"))
         self.btn_fmt_video.pack(side="left", padx=2, pady=2)
 
@@ -1298,10 +1300,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def _set_dl_format(self, fmt: str):
         self._dl_format.set(fmt)
-        accent = UITheme.TOGGLE_ACTIVE_BORDER
         if fmt == "audio":
-            self.btn_fmt_audio.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1)
-            self.btn_fmt_video.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0)
+            self.btn_fmt_audio.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1, hover_color=UITheme.TOGGLE_ACTIVE_HOVER_FILL)
+            self.btn_fmt_video.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0, hover_color=UITheme.TOGGLE_INACTIVE_HOVER_FILL)
+            # Brighten inactive text on hover
+            self.btn_fmt_video.bind("<Enter>", lambda e: self.btn_fmt_video.configure(text_color=UITheme.TOGGLE_INACTIVE_HOVER_TEXT))
+            self.btn_fmt_video.bind("<Leave>", lambda e: self.btn_fmt_video.configure(text_color=UITheme.TOGGLE_INACTIVE_TEXT))
             try:
                 self.quality_lbl.configure(text="Audio quality:")
             except Exception:
@@ -1313,8 +1317,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             except Exception:
                 pass
         else:
-            self.btn_fmt_audio.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0)
-            self.btn_fmt_video.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1)
+            self.btn_fmt_audio.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0, hover_color=UITheme.TOGGLE_INACTIVE_HOVER_FILL)
+            self.btn_fmt_video.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1, hover_color=UITheme.TOGGLE_ACTIVE_HOVER_FILL)
+            self.btn_fmt_audio.bind("<Enter>", lambda e: self.btn_fmt_audio.configure(text_color=UITheme.TOGGLE_INACTIVE_HOVER_TEXT))
+            self.btn_fmt_audio.bind("<Leave>", lambda e: self.btn_fmt_audio.configure(text_color=UITheme.TOGGLE_INACTIVE_TEXT))
             try:
                 self.quality_lbl.configure(text="Video quality:")
             except Exception:
@@ -1324,6 +1330,23 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 self.fmt_option.set(str(self._prefs.get("max_video_resolution", "Best (up to 4K)")))
             except Exception:
                 pass
+        self._audit_toggle_contrast()
+
+    def _audit_toggle_contrast(self):
+        pairs = [
+            (UITheme.TOGGLE_ACTIVE_FILL, UITheme.TOGGLE_ACTIVE_TEXT),
+            (UITheme.TOGGLE_ACTIVE_HOVER_FILL, UITheme.TOGGLE_ACTIVE_TEXT),
+            (UITheme.TOGGLE_INACTIVE_HOVER_FILL, UITheme.TOGGLE_INACTIVE_HOVER_TEXT),
+            (UITheme.TOGGLE_CONTAINER_BG, UITheme.TOGGLE_INACTIVE_TEXT),
+        ]
+        for fill, text in pairs:
+            try:
+                if _contrast(fill, text) < 4.5:
+                    logger.warning("toggle contrast low: %s on %s = %.2f", text, fill, _contrast(fill, text))
+            except Exception:
+                pass
+
+
 
     def _download_current(self):
         if self._dl_format.get() == "video":
