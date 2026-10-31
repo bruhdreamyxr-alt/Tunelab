@@ -1306,7 +1306,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._dl_format.set(fmt)
         pal = getattr(self, "_palette", {}) or {}
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
-        inactive_fg = pal.get("sub", UITheme.COLOR_GRAY)
+        inactive_fg = pal.get("text", "#ecf0f1")
         inactive_border = pal.get("hover", UITheme.SIDEBAR_HOVER)
         active_fill = pal.get("sidebar_active", UITheme.SIDEBAR_ACTIVE)
         hover_fill = pal.get("hover", UITheme.SIDEBAR_HOVER)
