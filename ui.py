@@ -866,7 +866,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             border_width=UITheme.BORDER_W,
             border_color=(getattr(self, "_palette", {}) or {}).get(
                 "hover", UITheme.SIDEBAR_HOVER),
-            placeholder_text="Paste link or search song name"
+            placeholder_text="Paste URL (YouTube, SoundCloud, etc.) or search..."
         )
         setattr(self.url_entry, "_theme_roles", {"border_color": "hover"})
         self.url_entry.pack(pady=(14,8), padx=UITheme.PAD_X, fill="x")
@@ -920,7 +920,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             command=lambda: self._start_worker(self.download_mp4)
         )
         self.btn_download_mp4.pack(side="left", padx=6)
-        self._style_button(self.btn_download_mp4, "secondary")
+        self._style_button(self.btn_download_mp4, "primary")
 
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
