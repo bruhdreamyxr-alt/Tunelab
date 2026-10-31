@@ -14,6 +14,22 @@ logger = logging.getLogger("universal_audio_studio.downloader")
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
+def clean_url(url: str) -> str:
+    """Strip tracking parameters (utm_*) from a URL."""
+    if not url:
+        return url
+    try:
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        parsed = urlparse(url)
+        if not parsed.query:
+            return url
+        params = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                  if not k.lower().startswith("utm_")]
+        new_query = urlencode(params)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path,
+                          parsed.params, new_query, parsed.fragment))
+    except Exception:
+        return url
 def _strip_ansi(text: Any) -> str:
     """Remove terminal ANSI control sequences from error strings."""
     if text is None:

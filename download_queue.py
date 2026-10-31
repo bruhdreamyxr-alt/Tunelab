@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import downloader
+
 logger = logging.getLogger("universal_audio_studio.queue")
 
 _DATA_FILE_NAMES = ("download_history.json", "download_queue.json")
@@ -385,7 +387,7 @@ class DownloadQueue:
         with self._lock:
             existing = {(it.url, it.is_video) for it in self._items}
             for url in urls:
-                url = url.strip()
+                url = downloader.clean_url(url.strip())
                 if url and url.startswith(('http://', 'https://')) and (url, is_video) not in existing:
                     self._items.append(QueueItem(url, is_video, skip_existing))
                     existing.add((url, is_video))

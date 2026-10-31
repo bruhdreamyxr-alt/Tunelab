@@ -191,7 +191,7 @@ class DownloaderPageMixin:
             pass
 
     def download_mp3(self):
-        url = self.url_entry.get().strip()
+        url = downloader.clean_url(self.url_entry.get().strip())
         if not url:
             return
         self._last_dl_url = url
@@ -221,7 +221,7 @@ class DownloaderPageMixin:
             self.set_download_buttons_state(True)
 
     def download_mp4(self):
-        url = self.url_entry.get().strip()
+        url = downloader.clean_url(self.url_entry.get().strip())
         if not url:
             return
         self._last_dl_url = url
