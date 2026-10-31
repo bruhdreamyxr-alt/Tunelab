@@ -1057,11 +1057,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.dl_speed_lbl = ctk.CTkLabel(self.tab_downloader, text="", font=UITheme.F(11), text_color="#7f8c8d")
         self._pack_h_if_used(self.dl_speed_lbl, pady=(0, UITheme.RHYTHM))
 
-        # Row: save folder + audio quality side by side (was two stacked rows).
-        settings_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        settings_row.pack(pady=(0, UITheme.RHYTHM))
+        # Unified save-path bar: button + current path in one row.
+        path_bar = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
+        path_bar.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
         self.btn_choose_folder = ctk.CTkButton(
-            settings_row,
+            path_bar,
             text="Change Save Folder",
             width=175, height=UITheme.H_CTRL,
             cursor="hand2",
@@ -1069,9 +1069,22 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.btn_choose_folder.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_choose_folder, "secondary", icon="folder")
-        ctk.CTkLabel(settings_row, text="Audio quality:", font=UITheme.F(12)).pack(side="left", padx=(0, 8))
+        self.save_folder_lbl = ctk.CTkLabel(
+            path_bar,
+            text="",
+            font=UITheme.F(11),
+            text_color="#95a5a6",
+            anchor="w",
+        )
+        self.save_folder_lbl.pack(side="left", fill="x", expand=True)
+        self._update_save_folder_label()
+
+        # Audio quality on its own row.
+        quality_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
+        quality_row.pack(pady=(0, UITheme.RHYTHM))
+        ctk.CTkLabel(quality_row, text="Audio quality:", font=UITheme.F(12)).pack(side="left", padx=(0, 8))
         self.fmt_option = ctk.CTkOptionMenu(
-            settings_row,
+            quality_row,
             width=190,
             values=[p["label"] for p in downloader.AUDIO_FORMATS.values()],
             command=self._on_audio_format_change,
@@ -1083,17 +1096,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.fmt_option.pack(side="left")
         self._style_option_menu(self.fmt_option)
-
-        self.save_folder_lbl = ctk.CTkLabel(
-            self.tab_downloader,
-            text="",
-            font=UITheme.F(11),
-            text_color="#95a5a6",
-            wraplength=340,
-            justify="center",
-        )
-        self._pack_h_if_used(
-            self.save_folder_lbl, padx=UITheme.PAD_X, pady=(UITheme.RHYTHM // 2, 0))
 
         # Outdated yt-dlp notice (hidden until a check finds one).
         self._ytdlp_notice_lbl = ctk.CTkLabel(
@@ -1107,7 +1109,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._pack_h_if_used(
             self._ytdlp_notice_lbl, padx=UITheme.PAD_X,
             pady=(UITheme.RHYTHM, UITheme.RHYTHM))
-        self._update_save_folder_label()
 
         # place downloader frame in content area
         self.tab_downloader.place(relx=0, rely=0, relwidth=1, relheight=1)

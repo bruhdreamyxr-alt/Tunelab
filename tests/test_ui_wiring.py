@@ -2648,7 +2648,7 @@ class OptionalRowVisibilityTests(unittest.TestCase):
 
     def test_the_downloader_rows_go_through_the_helper(self):
         body = _method_source("build_downloader_view")
-        for name in ("dl_detail", "dl_speed_lbl", "save_folder_lbl",
+        for name in ("dl_detail", "dl_speed_lbl",
                      "_ytdlp_notice_lbl"):
             # Matched with a regex rather than a fixed substring: the call is
             # wrapped across lines for the longer ones, so a literal check would
