@@ -390,3 +390,11 @@ class DownloaderPageMixin:
             self._queue_manager.upsert_history_entry(entry)
         except Exception as e:
             logger.warning("Failed to save download to history: %s", e)
+
+    def _on_dl_quality_change(self, label):
+        if getattr(self, "_dl_format", None) and self._dl_format.get() == "video":
+            self._set_pref('max_video_resolution', label)
+            downloader.performance_config['max_video_resolution'] = label
+            self.update_dl_detail(f"Video quality: {label}.", "#95a5a6")
+        else:
+            self._on_audio_format_change(label)

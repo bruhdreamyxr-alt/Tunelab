@@ -1081,7 +1081,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             quality_row,
             width=190,
             values=[p["label"] for p in downloader.AUDIO_FORMATS.values()],
-            command=self._on_audio_format_change,
+            command=self._on_dl_quality_change,
         )
         self.fmt_option.set(
             downloader.AUDIO_FORMATS.get(
@@ -1114,21 +1114,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.preview_panel.pack_forget()
 
         # --- Queue + Tag Editor controls ---
-        controls_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
-        controls_row.pack(pady=(UITheme.RHYTHM, UITheme.RHYTHM // 2))
-
-        self.btn_add_to_queue = ctk.CTkButton(
-            controls_row, text="➕ Add to Queue (MP3)", width=200, height=UITheme.H_SM,
-            command=self._add_current_to_queue)
-        self.btn_add_to_queue.pack(side="left", padx=(0, 8))
-        self._style_button(self.btn_add_to_queue, "secondary")
-
-        self.btn_add_to_queue_video = ctk.CTkButton(
-            controls_row, text="➕ Add to Queue (MP4)", width=200, height=UITheme.H_SM,
-            command=self._add_current_to_queue_video)
-        self.btn_add_to_queue_video.pack(side="left", padx=(0, 8))
-        self._style_button(self.btn_add_to_queue_video, "secondary")
-
         self._last_downloaded_file = None
         self._last_dl_was_video = False
 
