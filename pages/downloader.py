@@ -191,6 +191,7 @@ class DownloaderPageMixin:
             pass
 
     def download_mp3(self):
+        self._dl_finalized = False
         url = downloader.clean_url(self.url_entry.get().strip())
         if not url:
             return
@@ -219,8 +220,11 @@ class DownloaderPageMixin:
             self.on_dl_error(f"Unexpected download error: {e}")
         finally:
             self.set_download_buttons_state(True)
+            if not getattr(self, "_dl_finalized", True):
+                self.after(0, lambda: self._finalize_download(None, "Timed out"))
 
     def download_mp4(self):
+        self._dl_finalized = False
         url = downloader.clean_url(self.url_entry.get().strip())
         if not url:
             return
@@ -240,6 +244,8 @@ class DownloaderPageMixin:
             self.on_dl_error(f"Unexpected download error: {e}")
         finally:
             self.set_download_buttons_state(True)
+            if not getattr(self, "_dl_finalized", True):
+                self.after(0, lambda: self._finalize_download(None, "Timed out"))
 
     def on_dl_success(self, folder):
         # Cancel any pending (deferred) error display.
@@ -261,6 +267,7 @@ class DownloaderPageMixin:
             self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
+        self._dl_finalized = True
         self._pending_dl_error_id = None
         # Some extractors (e.g. Instagram) report "no video formats" for the
         # primary format selection but still download a fallback. If a file was
