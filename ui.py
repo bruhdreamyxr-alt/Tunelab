@@ -2919,7 +2919,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         tx.place(x=UITheme.SB_TEXT_X, y=1)
         hint = ctk.CTkLabel(row, text=self._SB_KEYS.get(name, ""),
                             width=22, height=18, corner_radius=9,
-                            font=UITheme.F(9, "bold"))
+                            font=UITheme.F(9, "bold"),
+                            fg_color=UITheme.SIDEBAR_HOVER,
+                            text_color=UITheme.COLOR_GRAY)
         hint.place(x=UITheme.SB_HINT_X, y=(UITheme.SB_ROW_H - 18) // 2)
 
         self._sb_bind_clickable(
