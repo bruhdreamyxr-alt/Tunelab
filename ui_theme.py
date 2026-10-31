@@ -495,6 +495,14 @@ class UITheme:
 
     # Colors
     COLOR_PRIMARY = "#3498db"
+    # Segmented toggle (Audio | Video) colors - fixed constants.
+    TOGGLE_CONTAINER_BG = "#2a2a32"
+    TOGGLE_CONTAINER_BORDER = "#3a3a44"
+    TOGGLE_ACTIVE_FILL = "#3a1a2a"
+    TOGGLE_ACTIVE_BORDER = "#e91e63"
+    TOGGLE_ACTIVE_TEXT = "#ffffff"
+    TOGGLE_INACTIVE_TEXT = "#b0b0b8"
+    TOGGLE_HOVER = "#32323a"
     COLOR_SUCCESS = "#2ecc71"
     COLOR_DANGER = "#e74c3c"
     COLOR_WARNING = "#f39c12"

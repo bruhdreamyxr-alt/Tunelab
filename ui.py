@@ -909,21 +909,29 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             pass
         self._url_clear_btn_visible = False
 
-        # Format toggle + single Download / Add to Queue.
+        # Segmented toggle inside a neutral container.
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         action_row.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X, fill="x")
 
+        toggle_container = ctk.CTkFrame(
+            action_row, fg_color=UITheme.TOGGLE_CONTAINER_BG,
+            corner_radius=UITheme.RADIUS_LG, border_width=1,
+            border_color=UITheme.TOGGLE_CONTAINER_BORDER)
+        toggle_container.pack(side="left", padx=(0, 12))
+
         self._dl_format = tk.StringVar(value="audio")
         self.btn_fmt_audio = ctk.CTkButton(
-            action_row, text="Audio", width=90, height=UITheme.H_SM,
+            toggle_container, text="Audio", width=80, height=UITheme.H_SM,
+            corner_radius=UITheme.RADIUS_MD, border_width=0,
+            fg_color="transparent", text_color=UITheme.TOGGLE_INACTIVE_TEXT,
             command=lambda: self._set_dl_format("audio"))
-        self.btn_fmt_audio.pack(side="left", padx=(0, 4))
-        self._style_button(self.btn_fmt_audio, "primary")
+        self.btn_fmt_audio.pack(side="left", padx=2, pady=2)
         self.btn_fmt_video = ctk.CTkButton(
-            action_row, text="Video", width=90, height=UITheme.H_SM,
+            toggle_container, text="Video", width=80, height=UITheme.H_SM,
+            corner_radius=UITheme.RADIUS_MD, border_width=0,
+            fg_color="transparent", text_color=UITheme.TOGGLE_INACTIVE_TEXT,
             command=lambda: self._set_dl_format("video"))
-        self.btn_fmt_video.pack(side="left", padx=(0, 12))
-        self._style_button(self.btn_fmt_video, "ghost", bordered=True)
+        self.btn_fmt_video.pack(side="left", padx=2, pady=2)
 
         self.btn_download = ctk.CTkButton(
             action_row, text="Download", width=160, height=UITheme.H_LG,
@@ -1088,7 +1096,8 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Audio quality on its own row.
         quality_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         quality_row.pack(pady=(0, UITheme.RHYTHM))
-        ctk.CTkLabel(quality_row, text="Audio quality:", font=UITheme.F(12)).pack(side="left", padx=(0, 8))
+        self.quality_lbl = ctk.CTkLabel(quality_row, text="Audio quality:", font=UITheme.F(12))
+        self.quality_lbl.pack(side="left", padx=(0, 8))
         self.fmt_option = ctk.CTkOptionMenu(
             quality_row,
             width=190,
@@ -1289,12 +1298,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     def _set_dl_format(self, fmt: str):
         self._dl_format.set(fmt)
-        accent = (getattr(self, "_palette", {}) or {}).get("accent", "#e91e63")
-        inactive_fg = UITheme.COLOR_GRAY
-        inactive_border = UITheme.SIDEBAR_HOVER
+        accent = UITheme.TOGGLE_ACTIVE_BORDER
         if fmt == "audio":
-            self.btn_fmt_audio.configure(fg_color="transparent", border_color=accent, text_color=accent, border_width=1)
-            self.btn_fmt_video.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1)
+            self.btn_fmt_audio.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1)
+            self.btn_fmt_video.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0)
+            try:
+                self.quality_lbl.configure(text="Audio quality:")
+            except Exception:
+                pass
             try:
                 self.fmt_option.configure(values=[p["label"] for p in downloader.AUDIO_FORMATS.values()])
                 self.fmt_option.set(downloader.AUDIO_FORMATS.get(
@@ -1302,8 +1313,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             except Exception:
                 pass
         else:
-            self.btn_fmt_audio.configure(fg_color="transparent", border_color=inactive_border, text_color=inactive_fg, border_width=1)
-            self.btn_fmt_video.configure(fg_color="transparent", border_color=accent, text_color=accent, border_width=1)
+            self.btn_fmt_audio.configure(fg_color="transparent", border_color=UITheme.TOGGLE_CONTAINER_BORDER, text_color=UITheme.TOGGLE_INACTIVE_TEXT, border_width=0)
+            self.btn_fmt_video.configure(fg_color=UITheme.TOGGLE_ACTIVE_FILL, border_color=UITheme.TOGGLE_ACTIVE_BORDER, text_color=UITheme.TOGGLE_ACTIVE_TEXT, border_width=1)
+            try:
+                self.quality_lbl.configure(text="Video quality:")
+            except Exception:
+                pass
             try:
                 self.fmt_option.configure(values=downloader.VIDEO_RESOLUTION_OPTIONS)
                 self.fmt_option.set(str(self._prefs.get("max_video_resolution", "Best (up to 4K)")))
@@ -1357,7 +1372,15 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
         added = queue.add(urls, is_video=is_video)
         self._refresh_queue_tab()
-        self.update_dl_status(f"Added {added} item(s) to queue.", "#27ae60")
+        # Clear the input so the next link can be pasted immediately.
+        try:
+            self.url_entry.delete(0, "end")
+            self._sync_clear_btn()
+        except Exception:
+            pass
+        noun = "item" if added == 1 else "items"
+        self.update_dl_status(f"Added {added} {noun} to queue.", "#27ae60")
+        self.show_toast(f"Added {added} {noun} to queue. Open Queue to view.", "success")
 
     # -----------------
     # Themed dialogs (replacement for the gray OS message boxes)

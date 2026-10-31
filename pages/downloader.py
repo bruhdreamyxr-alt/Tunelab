@@ -100,7 +100,6 @@ class DownloaderPageMixin:
                 self.fmt_option.set(fmt_label)
         except Exception:
             pass
-        self.update_dl_detail(f"Audio format set to {fmt_label}.", "#95a5a6")
 
 
 
