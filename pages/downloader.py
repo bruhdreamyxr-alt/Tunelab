@@ -60,9 +60,16 @@ class DownloaderPageMixin:
 
     def _update_save_folder_label(self):
         try:
-            self.save_folder_lbl.configure(
-                text=f"Saves to: {downloader.get_download_folder()}"
-            )
+            folder = downloader.get_download_folder()
+            text = folder
+            if len(text) > 40:
+                text = text[:18] + "…" + text[-18:]
+            self.save_folder_lbl.configure(text=text)
+            # Full path as tooltip via title attribute (best effort).
+            try:
+                self.save_folder_lbl.configure(tooltip_text=folder)
+            except Exception:
+                pass
         except Exception:
             logger.debug("Save-folder label update failed", exc_info=True)
 

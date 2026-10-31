@@ -928,6 +928,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Row 2: previews in a single row (was a 2x2 grid); stops are danger.
         preview_frame = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         preview_frame.pack(pady=(0, UITheme.RHYTHM))
+        preview_frame.pack_forget()
 
         self.btn_preview_audio = ctk.CTkButton(
             preview_frame,
@@ -1059,14 +1060,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.btn_choose_folder.pack(side="left", padx=(0, 8))
         self._style_button(self.btn_choose_folder, "secondary", icon="folder")
-        self.save_folder_lbl = ctk.CTkLabel(
+        self.save_folder_lbl = ctk.CTkButton(
             path_row,
             text="",
-            font=UITheme.F(11),
-            text_color="#95a5a6",
-            anchor="w",
+            width=260, height=UITheme.H_CTRL,
+            fg_color="transparent",
+            corner_radius=UITheme.RADIUS_MD,
+            cursor="hand2",
+            command=self._choose_save_folder,
         )
         self.save_folder_lbl.pack(side="left")
+        self._style_button(self.save_folder_lbl, "ghost", bordered=False, icon="folder")
         self._update_save_folder_label()
 
         # Audio quality on its own row.
