@@ -221,7 +221,7 @@ class DownloaderPageMixin:
         finally:
             self.set_download_buttons_state(True)
             if not getattr(self, "_dl_finalized", True):
-                self.after(0, lambda: self._finalize_download(None, "Timed out"))
+                self._dl_timeout_id = self.after(2000, lambda: self._dl_timeout_check())
 
     def download_mp4(self):
         self._dl_finalized = False
@@ -245,9 +245,17 @@ class DownloaderPageMixin:
         finally:
             self.set_download_buttons_state(True)
             if not getattr(self, "_dl_finalized", True):
-                self.after(0, lambda: self._finalize_download(None, "Timed out"))
+                self._dl_timeout_id = self.after(2000, lambda: self._dl_timeout_check())
 
     def on_dl_success(self, folder):
+        # Cancel any pending timeout.
+        tid = getattr(self, "_dl_timeout_id", None)
+        if tid is not None:
+            try:
+                self.after_cancel(tid)
+            except Exception:
+                pass
+            self._dl_timeout_id = None
         # Cancel any pending (deferred) error display.
         pending = getattr(self, "_pending_dl_error_id", None)
         if pending is not None:
@@ -267,6 +275,14 @@ class DownloaderPageMixin:
             self.after(0, lambda: self._finalize_download(None, err))
 
     def _finalize_download(self, folder, err):
+        # Cancel any pending timeout.
+        tid = getattr(self, "_dl_timeout_id", None)
+        if tid is not None:
+            try:
+                self.after_cancel(tid)
+            except Exception:
+                pass
+            self._dl_timeout_id = None
         self._dl_finalized = True
         self._pending_dl_error_id = None
         # Some extractors (e.g. Instagram) report "no video formats" for the
@@ -407,3 +423,8 @@ class DownloaderPageMixin:
             self.update_dl_detail(f"Video quality: {label}.", "#95a5a6")
         else:
             self._on_audio_format_change(label)
+
+    def _dl_timeout_check(self):
+        if getattr(self, "_dl_finalized", True):
+            return
+        self.after(0, lambda: self._finalize_download(None, "Timed out"))
