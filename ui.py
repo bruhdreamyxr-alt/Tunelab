@@ -1345,6 +1345,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 pass
         self._audit_toggle_contrast()
 
+    def _audit_toggle_contrast(self):
+        pairs = [
+            (UITheme.TOGGLE_ACTIVE_FILL, UITheme.TOGGLE_ACTIVE_TEXT),
+        ]
+        for fill, text in pairs:
+            try:
+                if _contrast(fill, text) < 4.5:
+                    logger.warning("toggle contrast low: %s on %s", text, fill)
+            except Exception:
+                pass
+
     def _download_current(self):
         if self._dl_format.get() == "video":
             self._start_worker(self.download_mp4)
