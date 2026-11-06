@@ -19,7 +19,8 @@ What we do instead is the same relabel done *carefully*, via ``py_aep``
 * The two relabels After Effects itself would refuse - anything landing on
   the AE 2022 layer-record layout from a 2023+ source, and the AE 2020
   media-replacement folder id - raise instead of emitting a file that no
-  release will open. We surface that refusal rather than bury it.
+  release will open. A version label is not a full project migration;
+  other project features can still make a down-conversion unsuitable.
 
 Animation presets (.ffx) share the RIFX container but not the head shape.
 py_aep cannot parse them at all, so this module handles them itself, from
@@ -42,22 +43,33 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Target releases offered in the UI, as the canonical version string py_aep
-# writes for that year (``major.0xbuild``). The build numbers are the ones
-# Adobe shipped as the year's baseline; picking the baseline keeps the
-# converted file openable across that whole release train, not just one patch.
+# Target releases offered in the UI, as a version string py_aep accepts.
+# Legacy build numbers use zero; the file-format compatibility stamp below,
+# not the informational build field, is the release-specific format marker.
 TARGET_VERSIONS = {
+    2020: "17.0x0",
+    2021: "18.0x0",
+    2022: "22.0x43",
     2023: "23.0x53",
     2024: "24.0x42",
     2025: "25.0x42",
     2026: "26.0x67",
 }
 
-# The AE major that each release year corresponds to. Adobe jumped from a
-# 2021 release (major 21) straight to a 2022 major, so the numbers are not
-# simply the last two digits of the year.
-_MAJOR_BY_YEAR = {2023: 23, 2024: 24, 2025: 25, 2026: 26}
+# Adobe's 2020 and 2021 releases use majors 17 and 18; the next supported
+# major is 22 for 2022 (there were no AE 19-21 releases).
+_MAJOR_BY_YEAR = {
+    2020: 17, 2021: 18, 2022: 22, 2023: 23,
+    2024: 24, 2025: 25, 2026: 26,
+}
 _YEAR_BY_MAJOR = {major: year for year, major in _MAJOR_BY_YEAR.items()}
+
+# py-aep refuses relabels when these version-gated records differ between the
+# parsed project and target release.
+_PROJECT_LAYOUT_STARTS = {
+    "media replacement folder id": 17,
+    "matte layer id": 23,
+}
 
 # --- Animation presets (.ffx) ------------------------------------------------
 # Container form of a preset; projects carry _PROJECT_FORM instead (that is
@@ -72,6 +84,9 @@ _FFX_MARKER = 3
 # from py_aep's FORMAT_VERSIONS - the same baselines TARGET_VERSIONS picks
 # for projects. format is the AE major plus 71 for 2022+ (93 = 22 ... 97 = 26).
 _FFX_STAMPS = {
+    2020: (93, 22),
+    2021: (93, 29),
+    2022: (93, 43),
     2023: (94, 9),
     2024: (95, 6),
     2025: (96, 9),
@@ -83,6 +98,22 @@ _FFX_STAMPS = {
 # table - the label shows the format number instead of a guessed year.
 _FFX_YEAR_BY_FORMAT = {92: 2018, 94: 2023, 95: 2024, 96: 2025, 97: 2026}
 _FFX_YEAR_BY_SUB_93 = {5: 2019, 22: 2020, 29: 2021, 43: 2022}
+
+
+def year_for_version(version: str) -> Optional[int]:
+    """Return a known release year for a project or preset version stamp."""
+    stamp = str(version or "")
+    if stamp.startswith("ffx:"):
+        fmt_s, dot, sub_s = stamp[4:].partition(".")
+        if not fmt_s.isdigit():
+            return None
+        fmt = int(fmt_s)
+        sub = int(sub_s) if dot and sub_s.isdigit() else -1
+        if fmt == 93:
+            return _FFX_YEAR_BY_SUB_93.get(sub)
+        return _FFX_YEAR_BY_FORMAT.get(fmt)
+    major, _minor, _build = _version_tuple(stamp)
+    return _YEAR_BY_MAJOR.get(major)
 
 
 class AepError(Exception):
@@ -124,6 +155,31 @@ def _version_tuple(version: str) -> tuple:
     major = int(parts[0]) if parts and parts[0].isdigit() else 0
     minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
     return (major, minor, int(build) if build.isdigit() else 0)
+
+
+def target_compatibility_issue(version: str, year: int) -> Optional[str]:
+    """Explain a known project-layout mismatch for an AE target.
+
+    Presets are header relabels and do not use py-aep's project-layout guard.
+    Unknown source versions remain selectable; conversion performs its own
+    validation before writing anything.
+    """
+    if not version or str(version).startswith("ffx:"):
+        return None
+    target_major = _MAJOR_BY_YEAR.get(year)
+    if target_major is None:
+        return "No converter target is available for AE %s." % year
+    source_major = _version_tuple(str(version))[0]
+    if source_major == 0:
+        return None
+    for feature, first_major in _PROJECT_LAYOUT_STARTS.items():
+        if (source_major >= first_major) != (target_major >= first_major):
+            return (
+                "AE %d introduced a different %s layout; the converter "
+                "cannot safely relabel across that change."
+                % (first_major, feature)
+            )
+    return None
 
 
 def describe_version(version: str) -> str:

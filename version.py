@@ -34,4 +34,8 @@
 # finished file plays everywhere, and the old After Effects re-encode step
 # is gone entirely - there is nothing left to fix up after the download.
 
-__version__ = "2.9.10"
+# 2.10.0 adds YouTube/SoundCloud track discovery, After Effects 2020-2022
+# targets, clearer queue/history states, a redesigned update banner, and
+# lighter downloader startup through lazy HTTP imports.
+
+__version__ = "2.10.0"

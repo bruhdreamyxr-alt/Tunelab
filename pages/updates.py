@@ -366,9 +366,46 @@ class UpdatesPageMixin:
         releases_btn.pack(side="left", padx=(8, 0))
         self._style_button(releases_btn, "secondary")
 
-        # Card 2: a version the user skipped, with the way back. The skip
-        # button on the banner was otherwise permanent-until-a-newer-release
-        # with no way to undo it from inside the app.
+        engine = self._settings_card(scroll, "Downloader engine (yt-dlp)")
+        engine.pack(fill="x", padx=0, pady=(0, 8))
+        self.ytdlp_ver_lbl = ctk.CTkLabel(
+            engine,
+            text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
+            font=UITheme.F(11), anchor="w",
+            text_color=pal.get("sub", "#95a5a6"),
+        )
+        setattr(self.ytdlp_ver_lbl, "_theme_roles", {"text_color": "sub"})
+        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(4, 6))
+        self.ytdlp_update_btn = ctk.CTkButton(
+            engine, text="Update yt-dlp", width=200, cursor="hand2",
+            command=self.update_ytdlp_clicked,
+        )
+        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(0, 8))
+        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
+
+        self.engine_auto_var = tk.BooleanVar(
+            value=bool((getattr(self, "_prefs", None) or {}).get(
+                "engine_auto_update", True)))
+        self.engine_auto_chk = ctk.CTkCheckBox(
+            engine,
+            text="Update the engine automatically at startup",
+            variable=self.engine_auto_var,
+            command=self._apply_engine_auto_pref,
+        )
+        self.engine_auto_chk.pack(anchor="w", padx=16, pady=(0, 2))
+        auto_update_hint = ctk.CTkLabel(
+            engine,
+            text="Automatic updates apply to packaged builds only; running "
+                 "from source never changes your Python environment.",
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left",
+            text_color=pal.get("sub", "#95a5a6"),
+        )
+        setattr(auto_update_hint, "_theme_roles", {"text_color": "sub"})
+        auto_update_hint.pack(anchor="w", padx=16, pady=(0, 10))
+
+        # A version the user skipped, with the way back. The skip button on
+        # the banner was otherwise permanent-until-a-newer-release with no way
+        # to undo it from inside the app.
         self.updates_skip_card = self._settings_card(scroll, "Skipped update")
         self.updates_skip_lbl = ctk.CTkLabel(
             self.updates_skip_card, text="", font=UITheme.F(11),

@@ -196,10 +196,20 @@ import tempfile
 import glob
 import html
 import json
-import urllib.request
 import urllib.parse
 import subprocess
 import importlib
+
+
+def _url_request(url: str, headers: dict[str, str]):
+    import urllib.request
+    return urllib.request.Request(url, headers=headers)
+
+
+def _urlopen(url: Any, timeout: float):
+    import urllib.request
+    return urllib.request.urlopen(url, timeout=timeout)
+
 
 # ---------------------------------------------------------------------------
 # Optional heavy dependencies (lazy)
@@ -300,7 +310,6 @@ DEFAULT_PERF_CONFIG = {
     'concurrent_fragment_downloads': 8,
     'http_chunk_size': 1 << 20,
     'max_video_resolution': 'Best (up to 4K)',
-    'cookies_file': '',
 }
 
 VIDEO_RESOLUTION_OPTIONS = ['Best (up to 4K)', '1080p', '720p', '480p']
@@ -687,8 +696,8 @@ def _normalize_spotify_url(raw_input: str) -> str:
         return f"https://open.spotify.com/{uri_match.group(1)}/{uri_match.group(2)}"
     if re.search(r'https?://(?:www\.)?spotify\.link/[\w]+', raw.lower()):
         try:
-            req = urllib.request.Request(raw, headers={"User-Agent": _BROWSER_UA})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            req = _url_request(raw, headers={"User-Agent": _BROWSER_UA})
+            with _urlopen(req, timeout=15) as resp:
                 raw = resp.geturl()
         except Exception:
             pass
@@ -725,11 +734,11 @@ def _spotify_embed_metadata(raw_input: str):
         return None
     kind, spotify_id = m.group(1), m.group(2)
     try:
-        req = urllib.request.Request(
+        req = _url_request(
             f"https://open.spotify.com/embed/{kind}/{spotify_id}",
             headers={"User-Agent": _BROWSER_UA},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with _urlopen(req, timeout=15) as resp:
             txt = resp.read(2000000).decode('utf-8', errors='replace')
         m2 = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', txt, re.DOTALL)
         if not m2:
@@ -967,9 +976,9 @@ def check_ytdlp_update_available(timeout: float = 8.0) -> dict:
     local = get_ytdlp_version()
     latest = None
     try:
-        req = urllib.request.Request(
+        req = _url_request(
             _YTDLP_RELEASES_API, headers={"User-Agent": _BROWSER_UA})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read(200000).decode("utf-8", errors="replace"))
         if isinstance(data, dict):
             latest = str(data.get("tag_name") or data.get("name") or "").strip()
@@ -1327,10 +1336,6 @@ def build_fast_yt_dlp_options(base_dir, output_template, audio_only: bool = Fals
         # plays but After Effects rejects — and with no conversion step
         # afterwards, codec must outrank resolution (see
         # VIDEO_FORMAT_SORT_FIELDS): the file is final the moment it lands.
-        # Cookies (optional) for age-gated/region-blocked videos.
-        _cf = str(cfg.get('cookies_file', '') or '').strip()
-        if _cf and os.path.isfile(_cf):
-            ydl_opts['cookiefile'] = _cf
         ydl_opts['format_sort'] = list(VIDEO_FORMAT_SORT_FIELDS)
 
     if audio_only:
@@ -1730,8 +1735,8 @@ def _fetch_thumbnail_bytes(thumbnail_url: str) -> Optional[bytes]:
     if not thumbnail_url:
         return None
     try:
-        req = urllib.request.Request(thumbnail_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        req = _url_request(thumbnail_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _urlopen(req, timeout=15) as resp:
             return resp.read()
     except Exception:
         return None
@@ -1812,7 +1817,7 @@ def _build_spotify_search_query(raw_input: str) -> Optional[str]:
     #    when the embed fetch is blocked, and a bare song-title search works.
     try:
         oembed_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(raw_input, safe=':/?&=') }"
-        with urllib.request.urlopen(oembed_url, timeout=15) as resp:
+        with _urlopen(oembed_url, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf-8', errors='replace'))
         title = data.get('title', '')
         if title:
@@ -1825,8 +1830,8 @@ def _build_spotify_search_query(raw_input: str) -> Optional[str]:
 
     # 3) Last resort: parse the page HTML for og: metadata (reliable for tracks).
     try:
-        req = urllib.request.Request(raw_input, headers={"User-Agent": _BROWSER_UA})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        req = _url_request(raw_input, headers={"User-Agent": _BROWSER_UA})
+        with _urlopen(req, timeout=15) as resp:
             page_text = resp.read(200000).decode('utf-8', errors='replace')
 
         title_match = re.search(r'<meta property="og:title" content="([^"]+)"', page_text)
@@ -1952,8 +1957,8 @@ def _build_soundcloud_search_query(raw_input: str) -> Optional[str]:
     # segments (which previously turned the whole description into the artist
     # and made YouTube search return a completely different track).
     try:
-        req = urllib.request.Request(raw_input, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        req = _url_request(raw_input, headers={"User-Agent": "Mozilla/5.0"})
+        with _urlopen(req, timeout=10) as resp:
             # Meta tags live in <head>, which is typically the first few KB.
             # Reading just 32KB (not the full page) is plenty and avoids
             # downloading ~250KB of page body we never use.
@@ -2263,11 +2268,6 @@ def _fallback_download_with_ytdlp_exe(
             cmd += ['--external-downloader', 'aria2c',
                     '--external-downloader-args', f'-c -x {conn} -s {conn} -k 1M']
 
-    # Cookies (optional) for age-gated/region-blocked videos.
-    _cf = str(cfg.get('cookies_file', '') or '').strip()
-    if _cf and os.path.isfile(_cf):
-        cmd += ['--cookies', _cf]
-
     # Format selection
     if format_override is not None:
         cmd += ['-f', format_override]
@@ -2447,8 +2447,8 @@ def _overlap(a: set, b: set) -> float:
 def _http_get_json(url: str, timeout: float = 8.0):
     """GET *url* and parse JSON, or return None on any failure."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        req = _url_request(url, headers={"User-Agent": _BROWSER_UA})
+        with _urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except Exception:
         return None
@@ -2457,8 +2457,8 @@ def _http_get_json(url: str, timeout: float = 8.0):
 def _http_get_bytes(url: str, timeout: float = 8.0) -> Optional[bytes]:
     """GET *url* and return raw bytes, or None on any failure."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        req = _url_request(url, headers={"User-Agent": _BROWSER_UA})
+        with _urlopen(req, timeout=timeout) as resp:
             return resp.read()
     except Exception:
         return None
@@ -2877,6 +2877,59 @@ def _search_and_download_best(query_text: str, ydl_opts: dict,
     return None
 
 
+def search_tracks(query: str, limit: int = 3,
+                  provider: str = "youtube") -> list[dict[str, Any]]:
+    """Return YouTube or SoundCloud matches without downloading them."""
+    query = str(query or "").strip()
+    if len(query) < 2:
+        return []
+    limit = max(1, min(int(limit), 5))
+    provider = str(provider or "youtube").strip().lower()
+    if provider not in ("youtube", "soundcloud"):
+        raise ValueError(f"Unsupported track search provider: {provider}")
+    if _mod_yt_dlp() is None:
+        raise RuntimeError("The yt-dlp Python module is not available.")
+
+    with _build_youtube_dl({
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": True,
+        "noplaylist": True,
+        "socket_timeout": 8,
+    }) as ydl:
+        prefix = "scsearch" if provider == "soundcloud" else "ytsearch"
+        info = ydl.extract_info(f"{prefix}{limit}:{query}",
+                                download=False)
+
+    if not isinstance(info, dict):
+        return []
+    results = []
+    for entry in info.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        title = str(entry.get("title") or "").strip()
+        user = entry.get("user")
+        user_name = user.get("username") if isinstance(user, dict) else ""
+        video_id = str(entry.get("id") or "").strip()
+        url = str(entry.get("webpage_url") or "").strip()
+        if not url and video_id:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        if not title or not url.startswith(("http://", "https://")):
+            continue
+        results.append({
+            "title": title,
+            "url": url,
+            "uploader": str(entry.get("uploader") or entry.get("channel")
+                            or entry.get("artist") or user_name or ""),
+            "duration": entry.get("duration"),
+            "provider": provider,
+        })
+        if len(results) >= limit:
+            break
+    return results
+
+
 def download_track(
     raw_input: str,
     status_callback: Callable[[str, str], Any],
@@ -3030,7 +3083,8 @@ def download_track(
             if not search_query:
                 raise RuntimeError('Could not extract metadata from SoundCloud link.')
 
-            status_callback("Searching YouTube for SoundCloud track...", "#f1c40f")
+            status_callback(
+                "SoundCloud fallback: searching YouTube...", "#f1c40f")
             if progress_callback:
                 ydl_opts['progress_hooks'] = [build_progress_hook(status_callback, progress_callback)]
 
@@ -3515,8 +3569,8 @@ def download_video_mp4(
         try:
             status_callback("Primary download failed. Searching page for direct media URLs...", "#f39c12")
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                req = _url_request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with _urlopen(req, timeout=15) as resp:
                     raw = resp.read(200000)
                 page_text = raw.decode('utf-8', errors='replace')
             except Exception:
@@ -3578,8 +3632,8 @@ def download_video_mp4(
             else:
                 # Best-effort: try HTML title tag.
                 try:
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, timeout=10) as resp:
+                    req = _url_request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with _urlopen(req, timeout=10) as resp:
                         raw = resp.read(65536)
                     html_snip = raw.decode('utf-8', errors='replace')
                     m = re.search(r'<title>(.*?)</title>', html_snip, flags=re.IGNORECASE | re.DOTALL)
@@ -3743,4 +3797,3 @@ def clear_app_cache():
         "removed_paths": removed_paths,
         "total_freed_bytes": total_freed_bytes,
     }
-

@@ -5,17 +5,14 @@ upload, and no local build required.
 
 ## TL;DR
 
-1. Bump `version.py` to the new version (for example `2.5.0`).
-2. Commit and push it.
-3. GitHub → **Releases** → **Draft a new release** → type the tag `v2.5.0` →
-   **Publish release**.
-4. Wait ~15 minutes. The Release ends up carrying the Windows installer, the
-   self-update ZIP, and installed Windows copies update
-   themselves from it.
+1. Update `version.py`, `CHANGELOG.md`, and `RELEASE_NOTES.md`.
+2. Commit and push the changes.
+3. Push a matching version tag (for example, `v2.10.0`).
+4. The tag workflow builds Windows and publishes the installer and self-update
+   ZIP, using `RELEASE_NOTES.md` as the Release description.
 
-That is the whole process. Today's installed copies take one final update through
-the old Google Drive route, and after that Drive is not used at all - see
-"Retiring Google Drive" below.
+That is the whole process. No manual Release draft, Drive manifest, or local
+build is required.
 
 ## Why a tag, not a button
 
@@ -26,8 +23,7 @@ The workflow (`.github/workflows/release.yml`) runs on two triggers:
 | **Run workflow** button | Builds Windows, keeps the results as *artifacts* (temporary, login-protected, expire after ~90 days). Useful to test a build. |
 | Pushing a `v*` tag | Builds Windows **and** attaches it to a Release: a permanent public download link. |
 
-Creating the Release in the GitHub web UI is the easiest way to push that tag,
-and it is the same act as publishing the download page.
+The workflow publishes the Release when the matching version tag is pushed.
 
 ## The tag must match version.py
 
@@ -43,12 +39,11 @@ fix. If you see that error, either bump `version.py` or re-tag.
 
 | File | Who it is for |
 |---|---|
-| `mysetup<versiondigits>.exe` | Windows installer — a fresh install. The digits come from `version.py`: `2.8.0` → `mysetup280.exe`. |
+| `mysetup<versiondigits>.exe` | Windows installer — a fresh install. The digits come from `version.py`: `2.10.0` → `mysetup2100.exe`. |
 | `UniversalAudioStudio_<version>_update.zip` | Windows in-app updater. Users never download this by hand; the app fetches it by itself. |
 
-The names are derived from `version.py`, never written by hand — for 2.8.0
-that is `mysetup280.exe` and `UniversalAudioStudio_2.8.0_update.zip`. The macOS
-build was removed, so a Release now carries Windows files only.
+The names are derived from `version.py`, never written by hand. The macOS
+build was removed, so a Release carries Windows files only.
 
 ## How updates reach people
 

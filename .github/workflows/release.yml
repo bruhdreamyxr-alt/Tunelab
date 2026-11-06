@@ -135,45 +135,8 @@ jobs:
 
       - name: List what will be published
         run: ls -lh release-files
-      - name: Write the legacy Google Drive manifest
-        run: |
-          python tools/make_update_manifest.py \
-            --release-dir release-files \
-            --repo "${{ github.repository }}" \
-            --tag "${{ github.ref_name }}"
-
       - name: Attach everything to a Release
         uses: softprops/action-gh-release@v3
         with:
           files: release-files/**/*
-          body: |
-            TuneLab ${{ github.ref_name }}.
-
-            ## Changes since v2.9.1
-
-            ### Added
-            - Add-to-Queue (MP3) and (MP4) buttons; queue no longer auto-starts on add.
-            - Select All / Deselect All in the queue page.
-            - DownloaderPageMixin extraction.
-            - README with run/test/build instructions.
-
-            ### Fixed
-            - MP4 queue items no longer skipped due to prior MP3 history.
-            - Queue add button overlap and double-add.
-            - Scrollbar hover reveal and transparent scroll-well canvas color.
-            - Crimson theme hover contrast.
-            - AEP target-year radio chips wrap so 2026 is visible.
-            - Queue toolbar split into two rows; bottom padding increased.
-            - Tooltips disabled by default.
-            - Engine card spacing in Performance page.
-            - Inno Setup install step PowerShell syntax.
-
-            ### Changed
-            - Queue toolbar simplified.
-            - Renamed repository to Tunelab.
-
-            * `mysetup*.exe` — the installer.
-            * `UniversalAudioStudio_*_update.zip` — used by the in-app updater.
-
-            Installed copies check this Release automatically and update
-            themselves.
+          body_path: RELEASE_NOTES.md

@@ -66,12 +66,30 @@ def _write_ffx(d, name="Fade In.ffx", **kw):
 
 
 class TargetVersionsTests(unittest.TestCase):
-    def test_five_years_offered(self):
+    def test_supported_years_and_file_format_stamps(self):
         self.assertEqual(sorted(aep_convert.TARGET_VERSIONS),
-                         [2023, 2024, 2025, 2026])
+                         [2020, 2021, 2022, 2023, 2024, 2025, 2026])
+        self.assertEqual(
+            {year: aep_convert._FFX_STAMPS[year]
+             for year in (2020, 2021, 2022)},
+            {2020: (93, 22), 2021: (93, 29), 2022: (93, 43)})
+        self.assertEqual(
+            {year: aep_convert._MAJOR_BY_YEAR[year]
+             for year in (2020, 2021, 2022)},
+            {2020: 17, 2021: 18, 2022: 22})
 
     def test_years_are_distinct_releases(self):
-        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 4)
+        self.assertEqual(len(set(aep_convert.TARGET_VERSIONS.values())), 7)
+
+    def test_year_for_project_and_preset_versions(self):
+        for version, year in (("17.0x0", 2020), ("18.0x0", 2021),
+                              ("22.0x43", 2022), ("23.0x53", 2023),
+                              ("ffx:93.22", 2020), ("ffx:93.29", 2021),
+                              ("ffx:93.43", 2022)):
+            with self.subTest(version=version):
+                self.assertEqual(aep_convert.year_for_version(version), year)
+        self.assertIsNone(aep_convert.year_for_version("99.0x99"))
+        self.assertIsNone(aep_convert.year_for_version("ffx:93.30"))
 
     def test_describe_version_names_the_year(self):
         self.assertIn("2024", aep_convert.describe_version("24.0x42"))
@@ -79,6 +97,22 @@ class TargetVersionsTests(unittest.TestCase):
 
     def test_describe_version_unknown_string(self):
         self.assertTrue(aep_convert.describe_version("99.0x99"))
+
+    def test_target_compatibility_matches_project_layout_guards(self):
+        self.assertIn(
+            "matte layer id",
+            aep_convert.target_compatibility_issue("26.3x87", 2021))
+        self.assertIsNone(
+            aep_convert.target_compatibility_issue("26.3x87", 2023))
+        self.assertIsNone(
+            aep_convert.target_compatibility_issue("18.0x0", 2022))
+        self.assertIn(
+            "matte layer id",
+            aep_convert.target_compatibility_issue("18.0x0", 2023))
+        self.assertIsNone(
+            aep_convert.target_compatibility_issue("ffx:95.6", 2021))
+        self.assertIsNone(
+            aep_convert.target_compatibility_issue("unknown", 2021))
 
 
 class OutputPathTests(unittest.TestCase):
@@ -285,6 +319,17 @@ class FfxTests(unittest.TestCase):
             self.assertEqual(before[32:], after[32:])
             with open(src, "rb") as f:
                 self.assertEqual(f.read(), before)  # original untouched
+
+    def test_legacy_preset_targets_use_verified_stamps(self):
+        for year, stamp in ((2020, (93, 22)), (2021, (93, 29)),
+                            (2022, (93, 43))):
+            with self.subTest(year=year), tempfile.TemporaryDirectory() as d:
+                src = _write_ffx(d, fmt=95, sub=6)
+                result = aep_convert.convert(src, year)
+                with open(result["out_path"], "rb") as fh:
+                    converted = fh.read()
+                self.assertEqual(struct.unpack_from(">II", converted, 24),
+                                 stamp)
 
     def test_unknown_year_refused(self):
         with tempfile.TemporaryDirectory() as d:

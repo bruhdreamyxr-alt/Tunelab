@@ -46,12 +46,11 @@ def _shorten_release_notes(body, limit=400):
 def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
                         on_accept=None, on_later=None, on_skip=None,
                         release_notes="") -> tuple:
-    """Fill *parent* (a frame) with the in-UI update offer. Returns its buttons.
+    """Fill *parent* with a themed update card and return its action buttons.
 
     Lives here rather than on the app because it is widget construction with no
-    app state in it: given a parent and a palette it makes a row of label and
-    two buttons, and hands the caller the widgets so it can wire the commands
-    and restyle them however the rest of the app does.
+    app state in it: given a parent and a palette it makes the update card and
+    hands the caller the action buttons so it can wire and style them.
 
     Why a banner and not a modal: an "update available" dialog interrupts
     whatever the user was doing to ask a question they did not raise, and the
@@ -68,69 +67,95 @@ def build_update_banner(parent, palette, local_ver: str, remote_ver: str,
     every launch. *release_notes* feeds an inline "What's new"
     expander so the user is not asked to update blind.
     """
-    body = ctk.CTkFrame(parent, fg_color="transparent")
+    surface = palette.get("surface", UITheme.SURFACE_BG)
+    border = palette.get("hover", UITheme.SIDEBAR_HOVER)
     accent = palette.get("accent", UITheme.COLOR_PRIMARY)
+    card = ctk.CTkFrame(
+        parent, fg_color=surface, corner_radius=UITheme.RADIUS_MD,
+        border_width=1, border_color=border)
+    setattr(card, "_theme_roles", {
+        "fg_color": "surface", "border_color": "hover"})
+    # Keep a real packed child in the permanent banner frame so an offer
+    # cannot silently collapse to an empty strip.
+    card.pack(fill="x", padx=12, pady=(8, 0))
 
-    ctk.CTkLabel(body, text="↑", font=UITheme.F(14, "bold"),
-                 text_color=accent, width=18).pack(side="left", padx=(0, 6))
-
-    # Packed, like every other widget here. When this builder moved out
-    # of ui.py the frame that holds the banner lost its pack() call and the
-    # offer silently rendered as an empty strip.
-    body.pack(fill="x")
+    content = ctk.CTkFrame(card, fg_color="transparent")
+    content.pack(fill="x", padx=16, pady=12)
 
     ctk.CTkLabel(
-        body,
-        text=f"Update available: {local_ver} → {remote_ver}. Installing "
-             f"closes the app and relaunches it.",
-        font=UITheme.F(11), anchor="w", justify="left",
-        wraplength=520,
-        text_color=palette.get("text", "#ecf0f1"),
-    ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        content, text="UPDATE AVAILABLE",
+        font=UITheme.F(10, "bold"), anchor="w",
+        text_color=accent,
+    ).pack(anchor="w")
+    title = ctk.CTkLabel(
+        content, text=f"TuneLab {remote_ver} is ready",
+        font=UITheme.F(14, "bold"), anchor="w", justify="left",
+        wraplength=900, text_color=palette.get("text", "#ecf0f1"))
+    setattr(title, "_theme_roles", {"text_color": "text"})
+    title.pack(fill="x", anchor="w", pady=(2, 0))
+    summary = ctk.CTkLabel(
+        content,
+        text=f"Installed version: {local_ver}. Installing closes and "
+             "relaunches TuneLab.",
+        font=UITheme.F(11), anchor="w", justify="left", wraplength=1000,
+        text_color=palette.get("sub", "#95a5a6"))
+    setattr(summary, "_theme_roles", {"text_color": "sub"})
+    summary.pack(fill="x", anchor="w", pady=(2, 0))
 
-    later = ctk.CTkButton(body, text="Later", width=70,
+    notes_box = None
+    notes_lbl = None
+    notes_btn = None
+    if str(release_notes or "").strip():
+        full = str(release_notes).strip()
+        preview = _shorten_release_notes(full)
+        notes_box = ctk.CTkFrame(content, fg_color="transparent")
+        notes_box.pack(fill="x", pady=(8, 0))
+        notes_lbl = ctk.CTkLabel(
+            notes_box, text=preview, font=UITheme.F(10),
+            anchor="w", justify="left", wraplength=1000,
+            text_color=palette.get("sub", "#95a5a6"))
+        setattr(notes_lbl, "_theme_roles", {"text_color": "sub"})
+        notes_lbl.pack(fill="x", anchor="w")
+
+    actions = ctk.CTkFrame(content, fg_color="transparent")
+    actions.pack(fill="x", pady=(10, 0))
+
+    later = ctk.CTkButton(actions, text="Later", width=76,
                           command=on_later or (lambda: None))
     later.pack(side="right", padx=(8, 0))
 
     skip = None
     if on_skip is not None:
-        skip = ctk.CTkButton(body, text="Skip this version", width=130,
+        skip = ctk.CTkButton(actions, text="Skip this version", width=130,
                              command=on_skip)
         skip.pack(side="right", padx=(8, 0))
 
-    now = ctk.CTkButton(body, text="Update now", width=110,
+    now = ctk.CTkButton(actions, text="Update now", width=120,
                         command=on_accept or (lambda: None))
     now.pack(side="right")
 
-    if str(release_notes or "").strip():
-        try:
-            notes_box = ctk.CTkFrame(body, fg_color="transparent")
-            notes_box.pack(side="bottom", fill="x", padx=(24, 0), pady=(6, 0))
-            full = str(release_notes).strip()
-            preview = _shorten_release_notes(full)
-            notes_lbl = ctk.CTkLabel(
-                notes_box, text=preview, font=UITheme.F(10),
-                anchor="w", justify="left",
-                text_color=palette.get("sub", "#95a5a6"))
-            notes_lbl.pack(side="top", anchor="w", fill="x")
+    if notes_box is not None and notes_lbl is not None:
+        full = str(release_notes).strip()
+        preview = _shorten_release_notes(full)
+        state = {"open": False}
 
-            state = {"open": False}
+        def _toggle():
+            state["open"] = not state["open"]
+            if state["open"]:
+                notes_lbl.configure(text=full)
+                notes_btn.configure(text="Hide release notes")
+            else:
+                notes_lbl.configure(text=preview)
+                notes_btn.configure(text="Release notes")
 
-            def _toggle():
-                state["open"] = not state["open"]
-                if state["open"]:
-                    notes_lbl.configure(text=full)
-                    notes_btn.configure(text="Hide what\u2019s new \u25b2")
-                else:
-                    notes_lbl.configure(text=preview)
-                    notes_btn.configure(text="What\u2019s new \u25bc")
-
-            notes_btn = ctk.CTkButton(
-                notes_box, text="What\u2019s new \u25bc", width=130, height=22,
-                font=UITheme.F(10), command=_toggle)
-            notes_btn.pack(side="top", anchor="w", pady=(4, 0))
-        except Exception:
-            pass  # Notes are a nicety; never lose the offer over them.
+        notes_btn = ctk.CTkButton(
+            notes_box, text="Release notes", width=112, height=24,
+            font=UITheme.F(10), command=_toggle, fg_color="transparent",
+            hover_color=palette.get("hover", UITheme.SIDEBAR_HOVER),
+            text_color=accent, border_width=0)
+        setattr(notes_btn, "_theme_roles", {
+            "hover_color": "hover", "text_color": "accent"})
+        notes_btn.pack(anchor="w", pady=(4, 0))
 
     if skip is not None:
         return now, later, skip
@@ -204,6 +229,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._overrides: dict[int, str] = {}  # per-row text_color (placeholder)
         self._selected: int | None = None
         self._select_all_mode: bool = False
+        self.on_selection_change = None
         self._row_fg = pal.get("text", "#ecf0f1")
         self._sel_bg = pal.get("accent", "#3498db")
         self._sel_fg = _on_color(
@@ -305,6 +331,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         if prev is not None and prev != index:
             self._paint(prev)
         self._paint(index)
+        self._notify_selection_change()
 
     def select_set(self, index: int) -> None:
         """Move the highlight without a click - the listbox spelling."""
@@ -315,6 +342,7 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._selected = None
         for i in range(len(self._rows)):
             self._paint(i)
+        self._notify_selection_change()
         try:
             self.update_idletasks()
         except Exception:
@@ -325,6 +353,11 @@ class _QueueRowList(ctk.CTkScrollableFrame):
         self._selected = None
         for i in range(len(self._rows)):
             self._paint(i)
+        self._notify_selection_change()
+
+    def _notify_selection_change(self) -> None:
+        if self.on_selection_change is not None:
+            self.on_selection_change()
 
     def _paint(self, i: int) -> None:
         if not (0 <= i < len(self._rows)):
@@ -377,6 +410,8 @@ class UiSplitsMixin:
     aep_src_lbl: Any
     aep_src_ver_lbl: Any
     aep_year_var: Any
+    aep_target_help: Any
+    aep_compatibility_note: Any
     aep_dest_lbl: Any
     aep_convert_btn: Any
     aep_progress: Any
@@ -681,7 +716,7 @@ class UiSplitsMixin:
         if not dest:
             return
 
-        self.btn_export.configure(text="Encoding (Using all CPU cores)...", state="disabled")
+        self.btn_export.configure(text="Rendering...", state="disabled")
         self.update_studio_progress(0.0)
 
         # Capture widget values on the main thread before starting the worker.
@@ -754,7 +789,7 @@ class UiSplitsMixin:
                         os.remove(temp_wav)
                     except Exception:
                         logger.debug("Failed to remove temp wav", exc_info=True)
-                self.after(0, lambda: self.btn_export.configure(text="Render & Export Full Studio Remix Track", state="normal"))
+                self.after(0, lambda: self.btn_export.configure(text="Export Remix", state="normal"))
 
         self._start_worker(run_export)
 
@@ -766,7 +801,7 @@ class UiSplitsMixin:
         dispatches on the extension). The page is deliberately plain data
         flow: pick a file (which reads and shows the AE version that saved
         it), pick a target year
-        (2022-2026 radio chips), confirm the auto-named destination, press
+        (2020-2026 radio chips), confirm the auto-named destination, press
         Convert. The heavy work runs on a worker thread via _start_worker;
         every widget touch afterwards goes through after(0, ...) because Tk
         widgets may only be touched on the main thread.
@@ -774,6 +809,7 @@ class UiSplitsMixin:
         self.aep_src_path = ""
         self.aep_src_lbl_version = ""
         self.aep_busy = False
+        import aep_convert  # local module; py_aep itself remains optional
         import tkinter as tk
 
         scroll = ctk.CTkScrollableFrame(self.tab_aep, fg_color="transparent")
@@ -781,50 +817,114 @@ class UiSplitsMixin:
                     padx=UITheme.RADIUS_CARD, pady=UITheme.RADIUS_CARD)
 
         # Source file card.
-        src_card = self._settings_card(scroll, "Project or preset file")
+        src_card = self._settings_card(scroll, "1. Choose a project or preset")
+        self.aep_src_card = src_card
         src_card.pack(fill="x", padx=0, pady=(0, 8))
+        src_help = ctk.CTkLabel(
+            src_card,
+            text="Select an After Effects project (.aep) or animation preset "
+                 "(.ffx).",
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+        )
+        setattr(src_help, "_theme_roles", {"text_color": "sub"})
+        src_help.pack(fill="x", padx=16, pady=(0, 8))
         row = ctk.CTkFrame(src_card, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 4))
         self.aep_src_lbl = ctk.CTkLabel(
-            row, text="No .aep or .ffx file chosen...",
-            font=UITheme.F(12, "italic"), anchor="w")
+            row, text="No file selected",
+            font=UITheme.F(12), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"))
+        setattr(self.aep_src_lbl, "_theme_roles", {"text_color": "sub"})
         self.aep_src_lbl.pack(side="left", fill="x", expand=True)
-        browse = ctk.CTkButton(row, text="Browse File", width=110,
+        browse = ctk.CTkButton(row, text="Choose file", width=130,
                                command=self.browse_aep_file)
         browse.pack(side="right", padx=(10, 0))
         self._style_button(browse, "secondary")
         self.aep_src_ver_lbl = ctk.CTkLabel(
-            src_card, text="Pick a project or preset to read the version that saved it.",
-            font=UITheme.F(11), anchor="w")
-        self.aep_src_ver_lbl.pack(fill="x", padx=16, pady=(0, 10))
+            src_card, text="The source version will be detected automatically.",
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"))
+        setattr(self.aep_src_ver_lbl, "_theme_roles", {"text_color": "sub"})
+        self.aep_src_ver_lbl.pack(fill="x", padx=16, pady=(0, 12))
 
-        # Target year card: five radio chips, defaulting to the newest.
-        tgt_card = self._settings_card(scroll, "Convert to")
+        # Target year card: radio chips, defaulting to the newest.
+        tgt_card = self._settings_card(
+            scroll, "2. Choose the target After Effects version")
+        self.aep_target_card = tgt_card
         tgt_card.pack(fill="x", padx=0, pady=(0, 8))
+        target_help = ctk.CTkLabel(
+            tgt_card,
+            text="Choose a source file to check target compatibility.",
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"))
+        setattr(target_help, "_theme_roles", {"text_color": "sub"})
+        target_help.pack(fill="x", padx=16, pady=(0, 8))
+        self.aep_target_help = target_help
         self.aep_year_var = tk.IntVar(value=2026)
         chips = ctk.CTkFrame(tgt_card, fg_color="transparent")
-        chips.pack(fill="x", padx=16, pady=(0, 4))
+        chips.pack(fill="x", padx=16, pady=(0, 12))
         self.aep_year_buttons = []
-        for i, _yr in enumerate((2023, 2024, 2025, 2026)):
+        palette = getattr(self, "_palette", {}) or {}
+        for i, _yr in enumerate(sorted(aep_convert.TARGET_VERSIONS)):
             rb = ctk.CTkRadioButton(
                 chips, text=str(_yr), variable=self.aep_year_var,
-                value=_yr, command=self._on_aep_year_change)
-            rb.grid(row=i // 3, column=i % 3, padx=(0, 14), pady=(0, 4),
+                value=_yr, command=self._on_aep_year_change,
+                width=72, height=28, radiobutton_width=16,
+                radiobutton_height=16,
+                fg_color=palette.get("accent", UITheme.COLOR_PRIMARY),
+                hover_color=palette.get("accent_hover", UITheme.COLOR_PRIMARY),
+                border_color=palette.get("sub", UITheme.COLOR_GRAY),
+                text_color=palette.get("text", "#ecf0f1"),
+                text_color_disabled=palette.get("sub", UITheme.COLOR_GRAY))
+            setattr(rb, "_theme_roles", {
+                "fg_color": "accent",
+                "hover_color": "accent_hover",
+                "border_color": "sub",
+                "text_color": "text",
+                "text_color_disabled": "sub",
+            })
+            rb.grid(row=i // 4, column=i % 4, padx=(0, 8), pady=(0, 4),
                     sticky="w")
             self.aep_year_buttons.append((_yr, rb))
+        compatibility_note = ctk.CTkLabel(
+            tgt_card,
+            text="Compatibility checks catch known format blockers only. "
+                 "Newer project features are not migrated and may not work "
+                 "in the target version. Test the converted copy in After "
+                 "Effects; your original stays untouched.",
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left",
+            text_color=palette.get("warning", UITheme.COLOR_WARNING))
+        setattr(compatibility_note, "_theme_roles", {"text_color": "warning"})
+        compatibility_note.pack(fill="x", padx=16, pady=(0, 12))
+        self.aep_compatibility_note = compatibility_note
 
         # Destination + Convert card.
-        out_card = self._settings_card(scroll, "Destination")
+        out_card = self._settings_card(scroll, "3. Review and convert")
+        self.aep_output_card = out_card
         out_card.pack(fill="x", padx=0, pady=(0, 8))
+        dest_help = ctk.CTkLabel(
+            out_card,
+            text="A converted copy is created beside the original; your source "
+                 "file is not overwritten.",
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"))
+        setattr(dest_help, "_theme_roles", {"text_color": "sub"})
+        dest_help.pack(fill="x", padx=16, pady=(0, 8))
         self.aep_dest_lbl = ctk.CTkLabel(
             out_card, text="Choose a file first.",
-            font=UITheme.F(11), anchor="w")
-        self.aep_dest_lbl.pack(fill="x", padx=16, pady=(0, 4))
+            font=UITheme.F(11), anchor="w", wraplength=640, justify="left")
+        self.aep_dest_lbl.pack(fill="x", padx=16, pady=(0, 8))
         # Convert button + progress.
         self.aep_convert_btn = ctk.CTkButton(
-            out_card, text="Convert File", width=200,
+            out_card, text="Convert file", height=UITheme.H_LG,
             command=self.start_aep_convert)
-        self.aep_convert_btn.pack(anchor="w", padx=16, pady=(2, 6))
+        self.aep_convert_btn.pack(fill="x", padx=16, pady=(0, 8))
         self._style_button(self.aep_convert_btn, "primary")
         self.aep_progress = ctk.CTkProgressBar(out_card, width=400)
         self.aep_progress.pack(fill="x", padx=16, pady=(0, 12))
@@ -845,13 +945,15 @@ class UiSplitsMixin:
         if not sel:
             return
         self.aep_src_path = sel
-        self.aep_src_version = ""
+        self.aep_src_lbl_version = ""
+        self._update_aep_target_compatibility("")
         try:
             self._set_pref("aep_last_dir", os.path.dirname(os.path.abspath(sel)))
         except Exception:
             pass
         self.aep_src_lbl.configure(text=os.path.basename(sel))
         self.aep_src_ver_lbl.configure(text="Reading file version...")
+        self.aep_progress.set(0.0)
         self._refresh_aep_dest_label()
         self._start_worker(self._aep_read_version_worker)
 
@@ -882,18 +984,44 @@ class UiSplitsMixin:
             self.aep_src_ver_lbl.configure(text=label)
         except Exception:
             pass
-        # Disable target years older than the source release: the converter
-        # refuses those (matte layer id layout differs) and would only error.
-        try:
-            src_year = int(version) if version else None
-            if src_year is not None:
-                for yr, btn in getattr(self, "aep_year_buttons", []):
-                    btn.configure(state="disabled" if yr < src_year else "normal")
-                if src_year > int(self.aep_year_var.get()):
-                    self.aep_year_var.set(src_year)
-        except Exception:
-            pass
+        self._update_aep_target_compatibility(version)
         self._refresh_aep_dest_label()
+
+    def _update_aep_target_compatibility(self, version):
+        """Disable known unsafe project targets and explain the layout change."""
+        import aep_convert  # local module
+
+        buttons = getattr(self, "aep_year_buttons", [])
+        issues = {
+            year: aep_convert.target_compatibility_issue(version, year)
+            for year, _button in buttons
+        }
+        for year, button in buttons:
+            button.configure(state="disabled" if issues[year] else "normal")
+
+        available = [year for year, issue in issues.items() if not issue]
+        if available:
+            current = self._aep_target_year()
+            if current not in available:
+                self.aep_year_var.set(
+                    min(available, key=lambda year: abs(year - current)))
+        reason = next((issue for issue in issues.values() if issue), None)
+        if not version:
+            help_text = (
+                "Reading source version; targets remain available until "
+                "compatibility is checked."
+                if getattr(self, "aep_src_path", "")
+                else "Choose a source file to check target compatibility.")
+        elif not reason:
+            help_text = "No known project-layout conflict for this source."
+        elif not available:
+            help_text = "No listed target is compatible. " + reason
+        else:
+            disabled = ", ".join(
+                str(year) for year, issue in issues.items() if issue)
+            help_text = ("Unavailable targets: %s. %s"
+                         % (disabled, reason))
+        self.aep_target_help.configure(text=help_text)
 
     def _aep_missing_dependency(self, message):
         """Show the py-aep install dialog; keep the version line short."""
@@ -970,9 +1098,13 @@ class UiSplitsMixin:
         src = self.aep_src_path
         try:
             result = aep_convert.convert(src, year)
+        except aep_convert.AepError as exc:
+            message = str(exc)
+            self.after(0, lambda e=message: self._aep_convert_failed(e))
+            return
         except Exception as exc:
-            # Keep the full traceback: the one-line str(exc) is what the old
-            # system box showed, and it is never enough to debug a bad file.
+            # Unexpected failures retain a traceback for diagnosis; expected
+            # conversion refusals are shown as ordinary user-facing messages.
             err, tb = str(exc), traceback.format_exc()
             self.after(0, lambda e=err, t=tb: self._aep_convert_failed(e, t))
             return

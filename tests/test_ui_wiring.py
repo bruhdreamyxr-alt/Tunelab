@@ -199,6 +199,84 @@ class UrlEnterBindingTests(unittest.TestCase):
         self.assertIn('cget("state")', body)
 
 
+class YoutubeTrackSearchTests(unittest.TestCase):
+    def test_search_returns_selectable_video_details_without_downloading(self):
+        ydl = mock.MagicMock()
+        ydl.__enter__.return_value = ydl
+        ydl.extract_info.return_value = {
+            "entries": [
+                {"id": "first", "title": "First track",
+                 "channel": "Artist", "duration": 125},
+                {"id": "second", "title": "Second track"},
+                {"title": "Missing video id"},
+            ],
+        }
+        with mock.patch.object(
+                downloader, "_mod_yt_dlp", return_value=object()), \
+                mock.patch.object(
+                    downloader, "_build_youtube_dl", return_value=ydl) as build:
+            results = downloader.search_tracks("artist song", limit=2)
+
+        build.assert_called_once()
+        self.assertEqual(
+            ydl.extract_info.call_args.args[0],
+            "ytsearch2:artist song",
+        )
+        self.assertFalse(ydl.extract_info.call_args.kwargs["download"])
+        self.assertEqual(
+            results,
+            [
+                {"title": "First track",
+                 "url": "https://www.youtube.com/watch?v=first",
+                 "uploader": "Artist", "duration": 125,
+                 "provider": "youtube"},
+                {"title": "Second track",
+                 "url": "https://www.youtube.com/watch?v=second",
+                 "uploader": "", "duration": None,
+                 "provider": "youtube"},
+            ],
+        )
+
+    def test_soundcloud_search_uses_scsearch_and_canonical_track_urls(self):
+        ydl = mock.MagicMock()
+        ydl.__enter__.return_value = ydl
+        ydl.extract_info.return_value = {
+            "entries": [{
+                "id": "123", "title": "Cloud track",
+                "user": {"username": "Cloud artist"},
+                "duration": 181.5,
+                "webpage_url": "https://soundcloud.com/cloud-artist/cloud-track",
+            }],
+        }
+        with mock.patch.object(
+                downloader, "_mod_yt_dlp", return_value=object()), \
+                mock.patch.object(
+                    downloader, "_build_youtube_dl", return_value=ydl):
+            results = downloader.search_tracks(
+                "cloud artist song", limit=3, provider="soundcloud")
+
+        self.assertEqual(
+            ydl.extract_info.call_args.args[0],
+            "scsearch3:cloud artist song",
+        )
+        self.assertFalse(ydl.extract_info.call_args.kwargs["download"])
+        self.assertEqual(results, [{
+            "title": "Cloud track",
+            "url": "https://soundcloud.com/cloud-artist/cloud-track",
+            "uploader": "Cloud artist",
+            "duration": 181.5,
+            "provider": "soundcloud",
+        }])
+
+    def test_search_needs_a_query_and_reports_missing_yt_dlp(self):
+        with mock.patch.object(downloader, "_mod_yt_dlp", return_value=None):
+            self.assertEqual(downloader.search_tracks(" "), [])
+            with self.assertRaisesRegex(RuntimeError, "yt-dlp"):
+                downloader.search_tracks("artist song")
+        with self.assertRaisesRegex(ValueError, "provider"):
+            downloader.search_tracks("artist song", provider="other")
+
+
 class PasteAnywhereTests(unittest.TestCase):
     """Ctrl+V anywhere is the downloader's most common action."""
 
@@ -225,6 +303,124 @@ class PasteAnywhereTests(unittest.TestCase):
         self.assertEqual(app.url_entry.get(), "https://soundcloud.com/x/mary")
         # And it brings the user to the box that took it.
         self.assertEqual(app._current_page, "downloader")
+
+    def test_aep_converter_groups_source_target_and_conversion_steps(self):
+        app = self.app
+        app.show_frame("aep")
+        app.update_idletasks()
+        self.assertEqual(
+            [year for year, _button in app.aep_year_buttons],
+            [2020, 2021, 2022, 2023, 2024, 2025, 2026])
+        self.assertEqual(app.aep_year_var.get(), 2026)
+        self.assertEqual(
+            {button.grid_info()["row"] for _, button in app.aep_year_buttons},
+            {0, 1})
+        self.assertIs(app.aep_src_lbl.master.master, app.aep_src_card)
+        self.assertIs(app.aep_src_ver_lbl.master, app.aep_src_card)
+        self.assertIs(app.aep_convert_btn.master, app.aep_output_card)
+        self.assertIs(app.aep_progress.master, app.aep_output_card)
+        self.assertIn("are not migrated",
+                      app.aep_compatibility_note.cget("text"))
+        self.assertIn("Test the converted copy",
+                      app.aep_compatibility_note.cget("text"))
+
+    def test_aep_target_options_follow_theme_and_allow_reselection(self):
+        app = self.app
+        app.show_frame("aep")
+        buttons = dict(app.aep_year_buttons)
+        app._aep_version_ready("Saved by AE 2026.", "26.3x87")
+        self.assertEqual(
+            [year for year, button in app.aep_year_buttons
+             if button.cget("state") == "disabled"],
+            [2020, 2021, 2022])
+        buttons[2024].invoke()
+        self.assertEqual(app.aep_year_var.get(), 2024)
+        buttons[2025].invoke()
+        self.assertEqual(app.aep_year_var.get(), 2025)
+
+        old_theme = app._color_theme_name
+        try:
+            app.apply_color_theme("Serika Dark")
+            self.assertEqual(
+                app.aep_compatibility_note.cget("text_color"),
+                app._palette["warning"])
+            for year in (2024, 2025):
+                self.assertEqual(
+                    buttons[year].cget("fg_color"), app._palette["accent"])
+                self.assertEqual(
+                    buttons[year].cget("hover_color"),
+                    app._palette["accent_hover"])
+        finally:
+            app.apply_color_theme(old_theme)
+
+    def test_aep_target_options_show_only_known_layout_compatible_targets(self):
+        app = self.app
+        app.show_frame("aep")
+        app._aep_version_ready("Saved by AE 2023.", "23.0x53")
+        self.assertEqual(
+            [year for year, button in app.aep_year_buttons
+             if button.cget("state") == "disabled"],
+            [2020, 2021, 2022])
+        self.assertIn("matte layer id", app.aep_target_help.cget("text"))
+
+        app._aep_version_ready("Saved by AE 2021 preset.", "ffx:93.29")
+        self.assertTrue(all(button.cget("state") == "normal"
+                            for _, button in app.aep_year_buttons))
+        self.assertEqual(app.aep_target_help.cget("text"),
+                         "No known project-layout conflict for this source.")
+
+        app._aep_version_ready("Saved by AE 2021.", "18.0x0")
+        self.assertEqual(
+            [year for year, button in app.aep_year_buttons
+             if button.cget("state") == "disabled"],
+            [2023, 2024, 2025, 2026])
+        self.assertEqual(app.aep_year_var.get(), 2022)
+
+    def test_choosing_another_aep_file_clears_old_progress(self):
+        app = self.app
+        app.show_frame("aep")
+        app.aep_progress.set(1.0)
+        app.aep_src_lbl_version = "26.0x67"
+        with mock.patch(
+                "ui_widgets.filedialog.askopenfilename",
+                return_value=r"C:\Temp\project.aep"), \
+                mock.patch.object(app, "_start_worker"):
+            app.browse_aep_file()
+        self.assertEqual(app.aep_progress.get(), 0.0)
+        self.assertEqual(app.aep_src_lbl_version, "")
+
+    def test_aep_conversion_refusal_is_shown_without_traceback(self):
+        import aep_convert
+
+        app = self.app
+        message = ("That conversion is not possible: cannot relabel an "
+                   "After Effects 26 project as 18.")
+        callbacks = []
+        with mock.patch("aep_convert.convert",
+                        side_effect=aep_convert.AepError(message)), \
+                mock.patch.object(app, "after",
+                                  side_effect=lambda _delay, callback:
+                                  callbacks.append(callback)), \
+                mock.patch.object(app, "_aep_convert_failed") as failed:
+            app.aep_src_path = r"C:\Temp\project.aep"
+            app._aep_convert_worker(2021)
+            callbacks.pop()()
+        failed.assert_called_once_with(message)
+
+    def test_studio_groups_the_workflow_and_updates_effect_values(self):
+        app = self.app
+        app.show_frame("studio")
+        app.update_idletasks()
+        self.assertIs(app.file_lbl.master, app.studio_file_row)
+        self.assertIs(app.sp_sld.master, app.studio_effects_card)
+        self.assertIs(app.rv_sld.master, app.studio_effects_card)
+        self.assertIs(app.btn_play.master, app.ctrl_frame)
+        self.assertIs(app.btn_export.master, app.studio_export_card)
+
+        app.sp_sld._command(1.2)
+        app.rv_sld._command(0.65)
+        self.assertEqual(app.sp_lbl.cget("text"), "1.20x")
+        self.assertEqual(app.rv_lbl.cget("text"), "65%")
 
     def test_a_visible_field_keeps_its_own_paste(self):
         app = self.app
@@ -292,11 +488,18 @@ class QueueRefreshTests(unittest.TestCase):
         self.assertIn("_history_view_sig", body)
 
 
-    def test_empty_queue_shows_a_placeholder(self):
+    def test_empty_queue_shows_an_actionable_state(self):
         body = _method_source("_rebuild_queue_list")
         self.assertIn("_queue_show_empty_placeholder", body)
         src = _source()
-        self.assertIn("Queue is empty", src)
+        self.assertIn('text="Your queue is empty"', src)
+        self.assertIn('text="Add a link"', src)
+        self.assertIn("self._queue_add_link", src)
+
+    def test_empty_state_is_not_a_selectable_queue_item(self):
+        body = _method_source("_queue_show_empty_placeholder")
+        self.assertIn("self.queue_rows.delete(0, tk.END)", body)
+        self.assertIn("self.queue_empty_state.place(", body)
 
 
 class ProgressTitleTests(unittest.TestCase):
@@ -487,26 +690,25 @@ class QueueRowLabelTests(unittest.TestCase):
         url = "https://example.com/very/long/path/that/is/definitely/cut"
         item = SimpleNamespace(status="active", url=url)
         item._progress = 0.45
-        self.assertEqual(
-            self.app._queue_row_label(0, item, 0),
-            "▶ [ACTIVE] 45% " + url[:44] + "…",
-        )
+        label = self.app._queue_row_label(0, item, 0)
+        self.assertIn("▶  ACTIVE", label)
+        self.assertIn("45%", label)
+        self.assertIn(url[:44] + "…", label)
 
     def test_active_row_without_progress_omits_the_percentage(self):
         url = "https://example.com/x"
         item = SimpleNamespace(status="active", url=url)
-        self.assertEqual(
-            self.app._queue_row_label(0, item, 0),
-            "▶ [ACTIVE] " + url[:45],
-        )
+        label = self.app._queue_row_label(0, item, 0)
+        self.assertIn("▶  ACTIVE", label)
+        self.assertNotIn("%", label)
+        self.assertIn(url, label)
 
     def test_other_rows_show_padded_status_and_longer_urls(self):
         url = "https://example.com/a-very-long-url-that-gets-truncated-here"
         item = SimpleNamespace(status="pending", url=url)
-        self.assertEqual(
-            self.app._queue_row_label(3, item, 0),
-            "○ [  PENDING] " + url[:49] + "…",
-        )
+        label = self.app._queue_row_label(3, item, 0)
+        self.assertIn("○  PENDING", label)
+        self.assertIn(url[:49] + "…", label)
 
     def test_a_row_cut_short_of_the_limit_is_left_whole(self):
         """Truncation marks the cut; a row that fits must not grow a mark."""
@@ -677,6 +879,32 @@ class MergedThemeControlTests(unittest.TestCase):
         self.assertIn("'light'", body)
 
 
+class SettingsCardThemeTests(unittest.TestCase):
+    """Settings cards use the palette's content surface, not sidebar tint."""
+
+    def test_settings_cards_follow_the_surface_role(self):
+        body = _method_source("_settings_card")
+        self.assertIn('fg_color=pal.get("surface"', body)
+        self.assertIn('"fg_color": "surface"', body)
+        self.assertNotIn('"fg_color": "sidebar"', body)
+
+
+class CookiesFileOptionRemovalTests(unittest.TestCase):
+    """The unsupported cookies-file option is removed from UI and downloads."""
+
+    def test_performance_page_has_no_cookies_file_controls(self):
+        src = _source()
+        for token in ("cookies_file", "cookies_browse_btn",
+                      "_choose_cookies_file", "_clear_cookies_file"):
+            self.assertNotIn(token, src)
+
+    def test_downloader_no_longer_accepts_a_cookies_file_setting(self):
+        self.assertNotIn("cookies_file", downloader.DEFAULT_PERF_CONFIG)
+        source = pathlib.Path(downloader.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("cookiefile", source)
+        self.assertNotIn("'--cookies'", source)
+
+
 class QueueRowThemingTests(unittest.TestCase):
     """The queue list is themed CTk rows, not a raw tk.Listbox."""
 
@@ -727,8 +955,170 @@ class StatusPillTests(unittest.TestCase):
         self.assertIn("_status_pill", body)
         self.assertIn("_status_dot", body)
 
+    def test_active_progress_has_a_themed_container_and_compact_controls(self):
+        body = _method_source("build_downloader_view")
+        self.assertIn('border_color=pal.get("hover"', body)
+        self.assertIn('{"fg_color": "surface", "border_color": "hover"}', body)
+        self.assertIn("controls_row", body)
+        self.assertIn('height=8', body)
+
     def test_status_updates_recolor_the_dot(self):
         self.assertIn("_status_dot", _method_source("update_dl_status"))
+
+
+class DownloaderSummaryTests(unittest.TestCase):
+    """The URL is not echoed in a redundant nested summary card."""
+
+    def test_source_field_is_prominent_without_nested_summary_cards(self):
+        body = _method_source("build_downloader_view")
+        self.assertIn("height=48", body)
+        self.assertIn('self.url_entry.bind("<FocusIn>"', body)
+        self.assertIn('self.url_entry.bind("<FocusOut>"', body)
+        self.assertIn("self.url_entry = ctk.CTkEntry(\n            self.tab_downloader", body)
+        self.assertNotIn("input_card", body)
+        self.assertNotIn("dl_summary_", body)
+
+    def test_input_only_updates_the_existing_status_line(self):
+        sync = _method_source("_sync_download_status")
+        self.assertIn("_split_input_urls(raw)", sync)
+        self.assertIn("self.update_dl_status(status", sync)
+        self.assertNotIn("raw", sync[sync.index("self.update_dl_status"):])
+        self.assertIn("_sync_download_status()", _method_source("_sync_clear_btn"))
+
+    def test_idle_space_is_used_for_unboxed_search_guidance_and_results(self):
+        body = _method_source("build_downloader_view")
+        self.assertIn("self.dl_context_frame = ctk.CTkFrame", body)
+        self.assertIn('self.dl_context_frame, fg_color="transparent"', body)
+        self.assertIn("self.dl_context_divider", body)
+        self.assertIn('{"fg_color": "hover"}', body)
+        self.assertIn("self.dl_search_results", body)
+        self.assertIn('self.url_entry.bind("<KeyRelease>"', body)
+        self.assertIn("_schedule_track_search()", _method_source("_on_url_changed"))
+        self.assertIn("self.after(\n            450", _method_source("_schedule_track_search"))
+        self.assertIn(
+            'values=["YouTube", "SoundCloud"]', body)
+        self.assertIn('row, text="Use track"', _method_source(
+            "_show_track_search_results"))
+
+    def test_search_only_runs_for_non_url_input_and_stale_results_are_dropped(self):
+        search = _method_source("_schedule_track_search")
+        self.assertIn("self._split_input_urls(raw)", search)
+        self.assertIn("_start_track_search(", search)
+        self.assertIn("provider_key", search)
+        results = _method_source("_show_track_search_results")
+        self.assertIn("generation != self._track_search_generation", results)
+        self.assertIn("self.url_entry.get().strip() != query", results)
+        self.assertIn("provider != str(", results)
+        self.assertIn('prefix = "scsearch"', _REPO.joinpath(
+            "downloader.py").read_text(encoding="utf-8"))
+
+    def test_download_progress_replaces_the_context_area_temporarily(self):
+        body = _method_source("_show_progress_row")
+        self.assertIn("context.pack_forget()", body)
+        self.assertIn("context.pack(", body)
+
+
+@requires_ctk
+class DownloaderSearchPreviewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._pref = os.path.join(cls._tmpdir.name, "ui_prefs.json")
+        cls._patcher = mock.patch.object(
+            ui.UniversalAudioStudio, "_get_pref_path",
+            lambda _app, _p=cls._pref: _p)
+        cls._patcher.start()
+        cls._startup_patch = _quiet_startup_check()
+        cls._startup_patch.start()
+        cls.app = ui.UniversalAudioStudio()
+        cls.app.withdraw()
+        cls.app.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        _destroy_app(cls.app)
+        cls._startup_patch.stop()
+        cls._patcher.stop()
+        cls._tmpdir.cleanup()
+
+    def test_selecting_a_result_loads_its_url_and_returns_to_link_guidance(self):
+        app = self.app
+        app.track_search_provider_var.set("YouTube")
+        app.url_entry.delete(0, "end")
+        app.url_entry.insert(0, "artist song")
+        app._on_url_changed()
+        generation = app._track_search_generation
+        pending = app._track_search_after
+        if pending:
+            app.after_cancel(pending)
+            app._track_search_after = None
+
+        app._show_track_search_results(
+            "artist song", generation, "youtube",
+            [{"title": "Track", "url": "https://youtube.com/watch?v=abc",
+              "uploader": "Artist", "duration": 95,
+              "provider": "youtube"}],
+            None,
+        )
+        self.assertEqual(app.dl_context_title.cget("text"), "YouTube results")
+        use_button = next(
+            child for child in app.dl_search_results.winfo_children()[0]
+            .winfo_children() if isinstance(child, ctk.CTkButton))
+        self.assertEqual(use_button.cget("text"), "Use track")
+        use_button.cget("command")()
+        self.assertEqual(
+            app.url_entry.get(), "https://youtube.com/watch?v=abc")
+        self.assertEqual(app.dl_context_title.cget("text"), "Discover music")
+        self.assertIn("Link ready", app.dl_context_hint.cget("text"))
+
+    def test_stale_search_results_are_ignored(self):
+        app = self.app
+        app.track_search_provider_var.set("YouTube")
+        app.url_entry.delete(0, "end")
+        app.url_entry.insert(0, "new query")
+        app._on_url_changed()
+        generation = app._track_search_generation
+        pending = app._track_search_after
+        if pending:
+            app.after_cancel(pending)
+            app._track_search_after = None
+
+        app._show_track_search_results(
+            "old query", generation - 1, "youtube",
+            [{"title": "Old result", "url": "https://youtube.com/watch?v=old"}],
+            None,
+        )
+        self.assertEqual(app.dl_context_title.cget("text"), "Discover music")
+        self.assertFalse(app.dl_search_results.winfo_children())
+
+    def test_provider_change_refreshes_results_and_theming_is_registered(self):
+        app = self.app
+        self.assertEqual(app.track_search_provider_var.get(), "YouTube")
+        roles = app.track_search_provider._theme_roles
+        self.assertEqual(roles["selected_color"], "accent")
+        self.assertEqual(roles["unselected_color"], "sidebar")
+        app.url_entry.delete(0, "end")
+        app.url_entry.insert(0, "new query")
+        with mock.patch.object(app, "_schedule_track_search") as schedule:
+            app._on_track_search_provider_change("SoundCloud")
+            schedule.assert_called_once_with()
+        app.track_search_provider_var.set("SoundCloud")
+        generation = app._track_search_generation
+        app._show_track_search_results(
+            "new query", generation, "youtube",
+            [{"title": "Wrong source", "url": "https://example.com"}],
+            None,
+        )
+        self.assertFalse(app.dl_search_results.winfo_children())
+
+    def test_context_is_hidden_during_download_progress_and_restored_after(self):
+        app = self.app
+        app._show_progress_row(True)
+        app.update()
+        self.assertEqual(app.dl_context_frame.winfo_manager(), "")
+        app._show_progress_row(False)
+        app.update()
+        self.assertEqual(app.dl_context_frame.winfo_manager(), "pack")
 
 
 class ContrastTests(unittest.TestCase):
@@ -1217,6 +1607,11 @@ class SidebarRailTests(unittest.TestCase):
                      "nav_anim_speed_slider", "nav_anim_speed_lbl"):
             self.assertIn(attr, card)
         self.assertIn('"Sidebar & motion"', card)
+        self.assertIn('text="Navigation animation"', card)
+        self.assertIn('{"fg_color": "hover"}', card)
+        self.assertIn('"pointer leaves."', card)
+        self.assertNotIn("Off by default — a rail that opens itself", card)
+        self.assertIn("fewer frames is faster", card)
         # Seeding those widgets needs the values already in hand, so the
         # reads have to precede the rail's own build.
         init = _method_source("__init__")
@@ -2105,6 +2500,214 @@ class CustomThemeEditorTests(unittest.TestCase):
                          ui.COLOR_THEMES['Dracula']['accent'])
         self.assertEqual(self.app._palette['bg'], ui.COLOR_THEMES['Dracula']['bg'])
 
+    def test_palette_widgets_and_late_widgets_follow_runtime_switches(self):
+        old_theme = self.app._color_theme_name
+        target = "Midnight" if old_theme != "Midnight" else "Serika Dark"
+        target_palette = ui.COLOR_THEMES[target]
+        late_label = ctk.CTkLabel(
+            self.app.tab_downloader, text="",
+            text_color=self.app._palette["sub"])
+        self.app.show_frame("queue")
+        self.app.queue_rows.delete(0, "end")
+        self.app._queue_show_empty_placeholder()
+        try:
+            self.app.apply_color_theme(target)
+            self.app.update_idletasks()
+            self.assertEqual(late_label.cget("text_color"),
+                             target_palette["sub"])
+            self.assertEqual(self.app.btn_add_to_queue.cget("fg_color"),
+                             target_palette["surface"])
+            self.assertEqual(self.app.btn_add_to_queue.cget("hover_color"),
+                             target_palette["hover"])
+            self.assertEqual(
+                self.app.queue_empty_hint.cget("text_color"),
+                target_palette["sub"],
+            )
+        finally:
+            late_label.destroy()
+            self.app.apply_color_theme(old_theme)
+
+    def test_lazy_pages_start_with_every_registered_color_in_the_palette(self):
+        for page in ("performance", "updates"):
+            self.app._ensure_page_built(page)
+
+        for page in ("settings", "performance", "updates"):
+            root = self.app._page_frames[page]
+            page_widget_ids = {id(widget)
+                               for widget in self.app._iter_widgets(root)}
+            for widget, roles in self.app._themed_registry:
+                if id(widget) not in page_widget_ids:
+                    continue
+                for option, role in roles.items():
+                    if role not in self.app._palette:
+                        continue
+                    try:
+                        value = widget.cget(option)
+                    except Exception:
+                        continue
+                    if (isinstance(value, str)
+                            and value.lower() not in ("", "transparent")):
+                        self.assertEqual(value.lower(),
+                                         self.app._palette[role].lower(),
+                                         (page, widget, option, role))
+
+    def test_option_menu_canvas_is_redrawn_with_saved_palette_on_page_show(self):
+        self.app.deiconify()
+        self.app.show_frame("downloader")
+        self.app.show_frame("settings")
+        self.app.update()
+        try:
+            for menu in (self.app.theme_menu, self.app._custom_start_menu):
+                fills = {
+                    menu._canvas.itemcget(item, "fill").lower()
+                    for item in menu._canvas.find_all()
+                    if menu._canvas.type(item) == "rectangle"
+                }
+                self.assertIn(self.app._palette["sidebar_active"].lower(),
+                              fills)
+                self.assertIn(self.app._palette["accent"].lower(), fills)
+        finally:
+            self.app.withdraw()
+
+    def test_history_sort_controls_show_active_key_and_direction(self):
+        self.app._ensure_page_built("history")
+        buttons = self.app._history_sort_buttons
+        self.assertEqual(buttons["date"][1].cget("text"), "Date ↓")
+
+        self.app._set_history_sort("title")
+        self.assertEqual(buttons["title"][1].cget("text"), "Title ↑")
+        self.assertEqual(buttons["date"][1].cget("text"), "Date")
+
+        self.app._set_history_sort("title")
+        self.assertEqual(buttons["title"][1].cget("text"), "Title ↓")
+
+    def test_history_empty_states_offer_the_relevant_next_action(self):
+        self.app._ensure_page_built("history")
+        try:
+            self.app.history_search_var.set("no matching title")
+            self.app._refresh_history_view(
+                force=True, _entries=[], _missing=0)
+            self.assertEqual(self.app.history_scroll.cget("label_text"), "")
+            action = next(
+                widget for widget in self.app._history_entries_frame.winfo_children()[0].winfo_children()
+                if isinstance(widget, ctk.CTkButton))
+            self.assertEqual(action.cget("text"), "Clear search")
+            action.invoke()
+            self.assertEqual(self.app.history_search_var.get(), "")
+
+            self.app._refresh_history_view(
+                force=True, _entries=[], _missing=0)
+            self.assertEqual(self.app.history_scroll.cget("label_text"), "")
+            action = next(
+                widget for widget in self.app._history_entries_frame.winfo_children()[0].winfo_children()
+                if isinstance(widget, ctk.CTkButton))
+            self.assertEqual(action.cget("text"), "Go to Downloader")
+            action.invoke()
+            self.assertEqual(self.app._current_page, "downloader")
+
+            self.app._refresh_history_view(
+                force=True,
+                _entries=[{"url": "https://example.com", "title": "Track",
+                           "status": "done"}],
+                _missing=0,
+            )
+            self.assertEqual(
+                self.app.history_scroll.cget("label_text"), "Past Downloads")
+        finally:
+            pending = getattr(self.app, "_history_search_after", None)
+            if pending:
+                self.app.after_cancel(pending)
+                self.app._history_search_after = None
+
+    def test_history_list_gallery_toggle_follows_theme(self):
+        old_theme = self.app._color_theme_name
+        try:
+            self.app._ensure_page_built("history")
+            for theme in ("Monokai", "Serika Light"):
+                self.app.apply_color_theme(theme)
+                palette = self.app._palette
+                toggle = self.app.history_view_toggle
+                self.assertEqual(toggle.cget("selected_color"),
+                                 palette["accent"])
+                self.assertEqual(toggle.cget("selected_hover_color"),
+                                 palette["accent_hover"])
+                self.assertEqual(toggle.cget("unselected_color"),
+                                 palette["sidebar"])
+                self.assertEqual(toggle.cget("unselected_hover_color"),
+                                 palette["hover"])
+                self.assertEqual(toggle.cget("text_color"),
+                                 palette["text"])
+                self.assertEqual(toggle.cget("fg_color"),
+                                 palette["surface"])
+        finally:
+            self.app.apply_color_theme(old_theme)
+
+    def test_queue_empty_state_add_link_action_and_visibility(self):
+        self.app._ensure_page_built("queue")
+        previous_manager = self.app._queue_manager
+        try:
+            self.app._queue_manager = None
+            self.app._rebuild_queue_list()
+            self.assertEqual(self.app.queue_rows.size(), 0)
+            self.assertTrue(self.app.queue_empty_state.place_info())
+            for button in (
+                    self.app.btn_queue_start, self.app.btn_queue_remove,
+                    self.app.btn_queue_select_all, self.app.btn_queue_deselect_all,
+                    self.app.btn_queue_clear_done, self.app.btn_queue_cancel):
+                self.assertEqual(button.cget("state"), "disabled")
+            with mock.patch.object(self.app, "show_frame") as show_page, \
+                    mock.patch.object(self.app.url_entry, "focus_set") as focus:
+                self.app.queue_add_link_btn.invoke()
+                show_page.assert_called_once_with("downloader")
+                focus.assert_called_once_with()
+
+            self.app._queue_manager = SimpleNamespace(
+                active_index=None, is_running=False,
+                items=[SimpleNamespace(status="pending",
+                                       title="Track", url="https://example.com")],
+            )
+            self.app._rebuild_queue_list()
+            self.assertEqual(self.app.queue_rows.size(), 1)
+            self.assertFalse(self.app.queue_empty_state.place_info())
+            self.assertEqual(self.app.btn_queue_start.cget("state"), "normal")
+            self.assertEqual(self.app.btn_queue_select_all.cget("state"), "normal")
+            self.assertEqual(self.app.btn_queue_remove.cget("state"), "disabled")
+            self.assertEqual(self.app.btn_queue_clear_done.cget("state"), "disabled")
+            self.assertEqual(self.app.btn_queue_cancel.cget("state"), "disabled")
+            self.app.btn_queue_select_all.invoke()
+            self.assertEqual(self.app.btn_queue_deselect_all.cget("state"), "normal")
+            self.assertEqual(self.app.btn_queue_remove.cget("state"), "normal")
+            self.assertEqual(self.app.btn_queue_select_all.cget("state"), "disabled")
+        finally:
+            self.app._queue_manager = previous_manager
+            self.app._rebuild_queue_list()
+
+    def test_format_toggle_uses_selected_palette_colors(self):
+        old_theme = self.app._color_theme_name
+        try:
+            for theme in ("TuneLab Dark", "Serika Dark", "Midnight"):
+                self.app.apply_color_theme(theme)
+                self.assertEqual(self.app.btn_fmt_audio.cget("fg_color"),
+                                 self.app._palette["accent"])
+                self.assertEqual(
+                    self.app.btn_fmt_audio.cget("text_color"),
+                    ui._on_color(
+                        self.app._palette["accent"],
+                        self.app._palette["text"],
+                        self.app._palette["bg"],
+                    ),
+                )
+                self.assertEqual(self.app.btn_fmt_video.cget("text_color"),
+                                 self.app._palette["text"])
+                self.app._set_dl_format("video")
+                self.assertEqual(self.app.btn_fmt_video.cget("fg_color"),
+                                 self.app._palette["accent"])
+                self.assertEqual(self.app.btn_fmt_audio.cget("text_color"),
+                                 self.app._palette["text"])
+                self.app._set_dl_format("audio")
+        finally:
+            self.app.apply_color_theme(old_theme)
+
     def test_set_role_repaints_and_persists(self):
         self.app.start_custom_from('Dracula')
         self.assertTrue(self.app.set_custom_role('accent', '#00FF00'))
@@ -2399,6 +3002,44 @@ class PerformanceSettingsPersistTests(unittest.TestCase):
         self.app.aria2_var.set(False)
         self.app.apply_performance_settings()
         self.assertFalse(self._reopen().aria2_var.get())
+
+    def test_performance_sliders_show_and_update_their_values(self):
+        self.app.aria2_conn_slider.set(7)
+        self.app.concurrent_frag_slider.set(12)
+        self.app.aria2_conn_slider._command(7)
+        self.app.concurrent_frag_slider._command(12)
+        self.assertEqual(self.app.aria2_conn_value.cget("text"), "7")
+        self.assertEqual(self.app.concurrent_frag_value.cget("text"), "12")
+
+    def test_aria2_connections_are_disabled_when_aria2_is_off(self):
+        self.assertEqual(self.app.aria2_conn_slider.cget("state"), "normal")
+        self.app.aria2_var.set(False)
+        self.app.aria2_chk.cget("command")()
+        self.assertEqual(self.app.aria2_conn_slider.cget("state"), "disabled")
+        self.app.aria2_var.set(True)
+        self.app.aria2_chk.cget("command")()
+        self.assertEqual(self.app.aria2_conn_slider.cget("state"), "normal")
+
+    def test_performance_apply_status_is_human_readable(self):
+        self.app.aria2_var.set(False)
+        self.app.aria2_conn_slider.set(9)
+        self.app.concurrent_frag_slider.set(12)
+        self.app.apply_performance_settings()
+        summary = self.app.perf_status.cget("text")
+        self.assertIn("aria2 disabled", summary)
+        self.assertIn("9 connections saved", summary)
+        self.assertIn("12 concurrent fragments", summary)
+        self.assertNotIn("True", summary)
+        self.assertNotIn("False", summary)
+
+    def test_engine_updates_are_on_update_center_not_performance(self):
+        self.app.show_frame("updates")
+        self.assertIs(self.app.ytdlp_update_btn.master,
+                      self.app.ytdlp_ver_lbl.master)
+        self.assertIs(self.app.ytdlp_update_btn.master,
+                      self.app.engine_auto_chk.master)
+        self.assertIsNot(self.app.ytdlp_update_btn.master,
+                         self.app.clear_cache_btn.master)
 
     def test_the_applied_value_stays_on_disk_after_a_restart(self):
         """Not just reloaded correctly - not deleted from the file.
@@ -3065,10 +3706,16 @@ class UpdateBannerTests(unittest.TestCase):
 
     def _buttons(self):
         banner = self.app._update_banner
-        return {c.cget("text"): c
-                for w in banner.winfo_children()
-                for c in w.winfo_children()
-                if isinstance(c, ctk.CTkButton)}
+        found = {}
+
+        def visit(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, ctk.CTkButton):
+                    found[child.cget("text")] = child
+                visit(child)
+
+        visit(banner)
+        return found
 
     @requires_ctk
     def test_it_starts_hidden(self):
@@ -3087,6 +3734,13 @@ class UpdateBannerTests(unittest.TestCase):
         self.assertTrue(self.app._update_banner.winfo_manager())
         self.assertEqual(set(self._buttons()),
                          {"Update now", "Later", "Skip this version"})
+        self.assertIn("TuneLab 2.6.0 is ready", self._banner_text())
+        self.assertIn("Installed version: 2.5.0", self._banner_text())
+        cards = [child for child in self.app._update_banner.winfo_children()
+                 if isinstance(child, ctk.CTkFrame)]
+        self.assertTrue(cards)
+        self.assertEqual(cards[0].cget("fg_color"),
+                         self.app._palette["surface"])
 
     @requires_ctk
     def test_update_now_runs_the_callback_and_gets_out_of_the_way(self):
@@ -3119,11 +3773,16 @@ class UpdateBannerTests(unittest.TestCase):
 
     def _banner_text(self):
         banner = self.app._update_banner
-        return " ".join(
-            str(c.cget("text"))
-            for w in banner.winfo_children()
-            for c in w.winfo_children()
-            if isinstance(c, ctk.CTkLabel))
+        labels = []
+
+        def visit(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, ctk.CTkLabel):
+                    labels.append(str(child.cget("text")))
+                visit(child)
+
+        visit(banner)
+        return " ".join(labels)
 
     @requires_ctk
     def test_the_banner_promises_only_what_is_always_true(self):
@@ -3209,6 +3868,9 @@ class UpdateBannerTests(unittest.TestCase):
         self.app.update_idletasks()
         self.assertIn("Fixed the daily update nag.",
                       " ".join(_all_labels(self.app._update_banner)))
+        self.assertIn("Release notes", self._buttons())
+        self._buttons()["Release notes"].invoke()
+        self.assertIn("Hide release notes", self._buttons())
 
     def test_long_release_notes_are_trimmed_for_the_preview(self):
         from ui_widgets import _shorten_release_notes

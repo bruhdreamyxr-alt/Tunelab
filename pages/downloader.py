@@ -7,9 +7,11 @@ handlers and builders move here in later steps.
 
 import logging
 import os
+import threading
 from tkinter import filedialog
 from typing import Any
 
+import customtkinter as ctk
 import downloader
 from ui_theme import UITheme
 
@@ -28,7 +30,11 @@ class DownloaderPageMixin:
     _last_title_pct: Any
     _map_color: Any
     _prefs: Any
+    _progress_row: Any
     _queue_manager: Any
+    _split_input_urls: Any
+    _track_search_after: Any
+    _track_search_generation: Any
     _refresh_tag_target: Any
     _set_pref: Any
     _show_error_dialog: Any
@@ -43,6 +49,8 @@ class DownloaderPageMixin:
     btn_download_mp3: Any
     btn_download_mp4: Any
     btn_edit_tags: Any
+    _dl_format: Any
+    dl_progress_status: Any
     dl_detail: Any
     dl_status: Any
     focus_displayof: Any
@@ -131,18 +139,48 @@ class DownloaderPageMixin:
 
     def _show_progress_row(self, visible: bool) -> None:
         """Show the progress bar + Cancel only while a download is running."""
-        row = getattr(self, "_progress_row", None)
-        if row is None:
-            return
-        try:
-            if visible:
-                if not row.winfo_manager():
-                    row.pack(fill="x", padx=UITheme.PAD_X,
-                             pady=(0, UITheme.RHYTHM))
-            elif row.winfo_manager():
-                row.pack_forget()
-        except Exception:
-            logger.debug("Could not toggle the progress row", exc_info=True)
+        def _apply():
+            row = getattr(self, "_progress_row", None)
+            pill = getattr(self, "_status_pill", None)
+            context = getattr(self, "dl_context_frame", None)
+            if row is None:
+                return
+            try:
+                if visible:
+                    self._track_search_generation = getattr(
+                        self, "_track_search_generation", 0) + 1
+                    pending = getattr(self, "_track_search_after", None)
+                    if pending:
+                        try:
+                            self.after_cancel(pending)
+                        except Exception:
+                            logger.debug("Could not cancel pending track search",
+                                         exc_info=True)
+                        self._track_search_after = None
+                    if context is not None and context.winfo_manager():
+                        context.pack_forget()
+                    if pill is not None and pill.winfo_manager():
+                        pill.pack_forget()
+                    if not row.winfo_manager():
+                        row.pack(fill="x", padx=UITheme.PAD_X,
+                                 pady=(0, UITheme.RHYTHM))
+                else:
+                    if pill is not None and not pill.winfo_manager():
+                        pill.pack(before=row, padx=UITheme.PAD_X,
+                                  pady=(0, UITheme.RHYTHM))
+                    if row.winfo_manager():
+                        row.pack_forget()
+                    if (context is not None
+                            and not context.winfo_manager()):
+                        context.pack(
+                            fill="both", expand=True, padx=UITheme.PAD_X,
+                            pady=(UITheme.RHYTHM, 8))
+                        self._schedule_track_search()
+            except Exception:
+                logger.debug("Could not toggle the progress row",
+                             exc_info=True)
+
+        self.after(0, _apply)
 
     def _retry_last_download(self):
         """Re-run the last download with the same URL and audio/video mode."""
@@ -157,7 +195,7 @@ class DownloaderPageMixin:
         try:
             self.url_entry.delete(0, "end")
             self.url_entry.insert(0, url)
-            self._sync_clear_btn()
+            self._on_url_changed()
         except Exception:
             pass
         if getattr(self, "_last_dl_was_video", False):
@@ -179,6 +217,7 @@ class DownloaderPageMixin:
     def _sync_clear_btn(self):
         """Show the inline ✕ only while the URL box has text."""
         try:
+            self._sync_download_status()
             show = bool(self.url_entry.get().strip())
             if show == self._url_clear_btn_visible:
                 return
@@ -189,6 +228,199 @@ class DownloaderPageMixin:
                 self.btn_clear_url.place_forget()
         except Exception:
             pass
+
+    def _sync_download_status(self):
+        """Keep the one status line useful without echoing the entered source."""
+        raw = self.url_entry.get().strip()
+        if not raw:
+            status = "Paste a link or search a song to begin"
+        else:
+            status = ("Ready to add links to the queue."
+                      if len(self._split_input_urls(raw)) > 1
+                      else "Ready to download.")
+        if (not self._progress_row.winfo_manager()
+                and self.dl_status.cget("text") != status):
+            self.update_dl_status(status, "#95a5a6")
+
+    def _on_url_changed(self):
+        """Sync the URL controls and debounce title-search suggestions."""
+        self._sync_clear_btn()
+        self._schedule_track_search()
+
+    def _schedule_track_search(self):
+        raw = self.url_entry.get().strip()
+        provider = str(
+            self.track_search_provider_var.get()).strip().lower()
+        provider_key = "soundcloud" if provider == "soundcloud" else "youtube"
+        self._track_search_generation = getattr(
+            self, "_track_search_generation", 0) + 1
+        generation = self._track_search_generation
+        pending = getattr(self, "_track_search_after", None)
+        if pending:
+            try:
+                self.after_cancel(pending)
+            except Exception:
+                logger.debug("Could not cancel pending track search",
+                             exc_info=True)
+            self._track_search_after = None
+
+        if not raw:
+            self._show_track_search_message(
+                "Paste a link above, or search for a track on YouTube or SoundCloud.")
+            return
+        urls = self._split_input_urls(raw)
+        if urls:
+            message = ("Multiple links detected. Add them to the queue."
+                       if len(urls) > 1
+                       else "Link ready. Choose a format and download, or add it to the queue.")
+            self._show_track_search_message(message)
+            return
+        if len(raw) < 2:
+            self._show_track_search_message(
+                f"Keep typing to search {provider} (at least 2 characters).")
+            return
+        if str(self.btn_download.cget("state")) == "disabled":
+            self._show_track_search_message(
+                "Search suggestions are paused while a download is running.")
+            return
+
+        self._show_track_search_message(f"Searching {provider}…")
+        self._track_search_after = self.after(
+            450, lambda: self._start_track_search(
+                raw, generation, provider_key))
+
+    def _on_track_search_provider_change(self, _value=None):
+        self._schedule_track_search()
+
+    def _start_track_search(self, query: str, generation: int,
+                            provider: str = "youtube"):
+        self._track_search_after = None
+
+        def _search():
+            try:
+                results = downloader.search_tracks(
+                    query, limit=3, provider=provider)
+                error = None
+            except Exception as exc:
+                logger.warning("%s search suggestions failed: %s",
+                               provider, exc, exc_info=True)
+                results = []
+                error = exc
+            try:
+                self.after(
+                    0, lambda: self._show_track_search_results(
+                        query, generation, provider, results, error))
+            except Exception:
+                logger.debug("Could not display track search suggestions",
+                             exc_info=True)
+
+        try:
+            threading.Thread(
+                target=_search, daemon=True,
+                name=f"{provider}-track-search").start()
+        except Exception as exc:
+            logger.exception("Could not start %s search suggestions", provider)
+            self._show_track_search_results(
+                query, generation, provider, [], exc)
+
+    def _show_track_search_message(self, message: str):
+        self.dl_context_title.configure(text="Discover music")
+        self.dl_context_hint.configure(text=message)
+        for child in self.dl_search_results.winfo_children():
+            child.destroy()
+
+    def _show_track_search_results(self, query, generation, provider,
+                                   results, error):
+        if generation != self._track_search_generation:
+            return
+        if self.url_entry.get().strip() != query:
+            return
+        if provider != str(
+                self.track_search_provider_var.get()).strip().lower():
+            return
+        if str(self.btn_download.cget("state")) == "disabled":
+            return
+        for child in self.dl_search_results.winfo_children():
+            child.destroy()
+        provider_title = (
+            "SoundCloud" if provider == "soundcloud" else "YouTube")
+        self.dl_context_title.configure(text=f"{provider_title} results")
+        if error is not None:
+            self.dl_context_hint.configure(
+                text=(f"{provider_title} search is unavailable right now. "
+                      "You can still paste a link."))
+            return
+        if not results:
+            self.dl_context_hint.configure(
+                text=(f"No {provider_title} matches found. Try another title "
+                      "or paste a link."))
+            return
+        self.dl_context_hint.configure(
+            text=f"{len(results)} matches · Choose a track to use its link.")
+        palette = getattr(self, "_palette", {}) or {}
+        for index, result in enumerate(results, start=1):
+            row = ctk.CTkFrame(
+                self.dl_search_results,
+                fg_color=palette.get("surface", UITheme.SURFACE_BG),
+                corner_radius=UITheme.RADIUS_MD,
+                border_width=1,
+                border_color=palette.get("hover", UITheme.SIDEBAR_HOVER),
+            )
+            setattr(row, "_theme_roles",
+                    {"fg_color": "surface", "border_color": "hover"})
+            row.pack(fill="x", pady=3)
+            rank = ctk.CTkLabel(
+                row, text=f"{index:02}", width=34,
+                font=UITheme.F(11, "bold"),
+                text_color=palette.get("accent", UITheme.COLOR_PRIMARY),
+            )
+            setattr(rank, "_theme_roles", {"text_color": "accent"})
+            rank.pack(side="left", padx=(10, 4), pady=8)
+            text_frame = ctk.CTkFrame(row, fg_color="transparent")
+            text_frame.pack(side="left", fill="x", expand=True,
+                            padx=(2, 8), pady=7)
+            title_label = ctk.CTkLabel(
+                text_frame, text=result["title"], font=UITheme.F(12, "bold"),
+                anchor="w", justify="left", wraplength=360,
+            )
+            setattr(title_label, "_theme_roles", {"text_color": "text"})
+            title_label.pack(fill="x")
+            details = [str(result.get("uploader") or provider_title)]
+            duration = result.get("duration")
+            if isinstance(duration, (int, float)) and duration >= 0:
+                seconds = int(duration)
+                if seconds >= 3600:
+                    duration_text = (
+                        f"{seconds // 3600}:{(seconds % 3600) // 60:02}:"
+                        f"{seconds % 60:02}")
+                else:
+                    duration_text = f"{seconds // 60}:{seconds % 60:02}"
+                details.append(duration_text)
+            details_label = ctk.CTkLabel(
+                text_frame, text=" · ".join(details), font=UITheme.F(10),
+                text_color=palette.get("sub", "#95a5a6"),
+                anchor="w", wraplength=360,
+            )
+            setattr(details_label, "_theme_roles", {"text_color": "sub"})
+            details_label.pack(fill="x")
+            select = ctk.CTkButton(
+                row, text="Use track", width=92, height=UITheme.H_SM,
+                command=lambda item=result: self._use_track_search_result(item),
+            )
+            select.pack(side="right", padx=10, pady=8)
+            self._style_button(select, "primary")
+
+    def _use_track_search_result(self, result):
+        url = str(result.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            logger.warning("Ignoring search result without a valid URL")
+            self._show_track_search_message(
+                "That result did not include a usable link. Try another match.")
+            return
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, url)
+        self._on_url_changed()
+        self.url_entry.focus_set()
 
     def download_mp3(self):
         self._dl_finalized = False

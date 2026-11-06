@@ -267,8 +267,20 @@ class ReleaseWorkflowTests(unittest.TestCase):
         release_job = text.split("\n  release:")[1]
         self.assertIn("actions/setup-python@", release_job)
         self.assertIn("tools/get_version.py", release_job)
+
+    def test_release_uses_current_release_notes(self):
+        workflow = _read(".github/workflows/release.yml")
+        self.assertIn("body_path: RELEASE_NOTES.md", workflow)
+        notes = _read("RELEASE_NOTES.md")
+        self.assertIn("TuneLab 2.10.0", notes)
+        self.assertIn("After Effects 2020-2026", notes)
+
+    def test_current_workflow_does_not_create_legacy_drive_manifest(self):
+        workflow = _read(".github/workflows/release.yml")
+        self.assertNotIn("make_update_manifest.py", workflow)
+
     def test_every_release_file_is_attached(self):
-        """update.json has to be published, or it cannot be downloaded."""
+        """The Windows installer and in-app update ZIP are both published."""
         self.assertIn("files: release-files/*",
                       _read(".github/workflows/release.yml"))
 
@@ -692,5 +704,4 @@ class UpdaterRelocationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

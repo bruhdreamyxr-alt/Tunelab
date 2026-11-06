@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.10.0 — 2026-11-06
+
+### Added
+- YouTube and SoundCloud track suggestions on the Downloader page.
+- After Effects project and preset targets for 2020-2022, extending support
+  through 2026.
+- A clearer empty-queue action and selection-aware queue controls.
+
+### Improved
+- Redesigned the update banner with release notes and clearer install guidance.
+- Refined Downloader, History, Studio, and settings layouts and status states.
+- Deferred `urllib.request` imports until a network request is made, reducing
+  downloader import work during startup.
+
+### Fixed
+- Prevented known-unsafe After Effects relabels across project-layout changes
+  and explained compatibility limits before conversion.
+- Kept downloader status and suggestions in sync with URL edits and active
+  downloads.
+- Removed the obsolete Google Drive manifest step from the release workflow.
+
 ## 2.9.6 — 2026-10-27
 
 ### Fixed

@@ -202,7 +202,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             "aria2_connections": 16,
             "concurrent_fragment_downloads": 8,
             "max_video_resolution": "Best (up to 4K)",
-            "cookies_file": "",
             # The AEP converter's Browse dialog opens here. Without it the
             # dialog restarts in the working directory every time, and
             # project files almost always live in one folder.
@@ -870,18 +869,23 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     def build_downloader_view(self):
         # Page title lives in the header only (title_lbl) — no in-page H1.
 
+        pal = getattr(self, "_palette", {}) or {}
         self.url_entry = ctk.CTkEntry(
             self.tab_downloader,
             width=300,
-            height=UITheme.H_LG,
+            height=48,
             corner_radius=UITheme.RADIUS_FIELD,
-            border_width=UITheme.BORDER_W,
-            border_color=(getattr(self, "_palette", {}) or {}).get(
-                "hover", UITheme.SIDEBAR_HOVER),
+            border_width=2,
+            border_color=pal.get("hover", UITheme.SIDEBAR_HOVER),
             placeholder_text="Paste URL (YouTube, SoundCloud, etc.) or search..."
         )
         setattr(self.url_entry, "_theme_roles", {"border_color": "hover"})
-        self.url_entry.pack(pady=(14,8), padx=UITheme.PAD_X, fill="x")
+        self.url_entry.pack(pady=(14, 8),
+                            padx=UITheme.PAD_X, fill="x")
+        self.url_entry.bind("<FocusIn>",
+                            lambda _event: self._on_url_entry_focus(True))
+        self.url_entry.bind("<FocusOut>",
+                            lambda _event: self._on_url_entry_focus(False))
 
         # Inline clear button: overlays the field's right edge and only shows
         # while there is text to clear (Escape does the same from the keyboard).
@@ -913,7 +917,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         action_row = ctk.CTkFrame(self.tab_downloader, fg_color="transparent")
         action_row.pack(pady=(0, UITheme.RHYTHM), padx=UITheme.PAD_X, fill="x")
 
-        pal = getattr(self, "_palette", {}) or {}
         toggle_container = ctk.CTkFrame(
             action_row, fg_color=pal.get("surface", UITheme.SURFACE_BG),
             corner_radius=UITheme.RADIUS_LG, border_width=1,
@@ -1007,11 +1010,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.bind("<KP_Enter>", self._on_url_enter)
         # Escape empties the box without leaving the field.
         self.url_entry.bind("<Escape>", self._clear_url_entry)
-        self.url_entry.bind("<KeyRelease>", lambda e: self._sync_clear_btn())
+        self.url_entry.bind("<KeyRelease>", lambda e: self._on_url_changed())
         # A paste that skips the keyboard (context menu) fires no KeyRelease
         # on the entry; re-check right after the class binding inserted text.
         self.url_entry.bind(
-            "<<Paste>>", lambda e: self.after(1, self._sync_clear_btn)
+            "<<Paste>>", lambda e: self.after(1, self._on_url_changed)
         )
         pal = getattr(self, "_palette", {}) or {}
         pill_bg = pal.get("sidebar_active", UITheme.SIDEBAR_ACTIVE)
@@ -1050,25 +1053,38 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # they pushed the settings and queue controls down the page. It appears
         # the moment a download starts and goes away again when it ends.
         self._progress_row = progress_row = ctk.CTkFrame(
-            self.tab_downloader, fg_color="transparent")
+            self.tab_downloader,
+            fg_color=pal.get("surface", UITheme.SURFACE_BG),
+            corner_radius=UITheme.RADIUS_LG,
+            border_width=1,
+            border_color=pal.get("hover", UITheme.SIDEBAR_HOVER),
+        )
+        setattr(progress_row, "_theme_roles",
+                {"fg_color": "surface", "border_color": "hover"})
         progress_row.pack(fill="x", padx=UITheme.PAD_X, pady=(0, UITheme.RHYTHM))
         status_line = ctk.CTkFrame(progress_row, fg_color="transparent")
-        status_line.pack(fill="x")
-        self.dl_status = ctk.CTkLabel(status_line, text="Downloading...", font=UITheme.F(12, "bold"), anchor="w")
-        self.dl_status.pack(side="left")
+        status_line.pack(fill="x", padx=12, pady=(10, 5))
+        self.dl_progress_status = ctk.CTkLabel(
+            status_line, text="Downloading...",
+            font=UITheme.F(12, "bold"), anchor="w")
+        self.dl_progress_status.pack(side="left")
         self.dl_progress_text = ctk.CTkLabel(status_line, text="", font=UITheme.F(11), anchor="e")
         self.dl_progress_text.pack(side="right")
-        self.progress_bar = ctk.CTkProgressBar(progress_row, width=200)
+        controls_row = ctk.CTkFrame(progress_row, fg_color="transparent")
+        controls_row.pack(fill="x", padx=12, pady=(2, 10))
+        self.progress_bar = ctk.CTkProgressBar(controls_row, width=200,
+                                               height=8)
         self.progress_bar.set(0)
-        self.progress_bar.pack(fill="x", pady=(2, 0))
+        self.progress_bar.pack(side="left", fill="x", expand=True,
+                               padx=(0, 12))
         self.btn_cancel_download = ctk.CTkButton(
-            progress_row,
+            controls_row,
             text="Cancel", width=80, height=UITheme.H_SM,
             cursor="hand2",
             command=self._cancel_active_download,
             state="disabled",
         )
-        self.btn_cancel_download.pack(anchor="e", pady=(2, 0))
+        self.btn_cancel_download.pack(side="right")
         self._style_button(self.btn_cancel_download, "danger", icon="close")
         progress_row.pack_forget()
 
@@ -1098,6 +1114,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         )
         self.fmt_option.pack(side="left")
         self._style_option_menu(self.fmt_option)
+        self._set_dl_format(self._dl_format.get())
         try:
             pal = getattr(self, "_palette", {}) or {}
             self.fmt_option.configure(fg_color=pal.get("surface", UITheme.SURFACE_BG),
@@ -1121,6 +1138,55 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.save_folder_lbl.pack(side="right", padx=(12, 0))
         self._style_button(self.save_folder_lbl, "ghost", bordered=True, icon="folder")
         self._update_save_folder_label()
+
+        self.dl_context_frame = ctk.CTkFrame(
+            self.tab_downloader, fg_color="transparent")
+        self.dl_context_frame.pack(
+            fill="both", expand=True, padx=UITheme.PAD_X,
+            pady=(UITheme.RHYTHM, 8))
+        self.dl_context_divider = ctk.CTkFrame(
+            self.dl_context_frame,
+            height=1,
+            fg_color=pal.get("hover", UITheme.SIDEBAR_HOVER),
+        )
+        self.dl_context_divider.pack(fill="x", pady=(0, 10))
+        setattr(self.dl_context_divider, "_theme_roles",
+                {"fg_color": "hover"})
+        discovery_header = ctk.CTkFrame(
+            self.dl_context_frame, fg_color="transparent")
+        discovery_header.pack(fill="x", pady=(0, 6))
+        self.dl_context_title = ctk.CTkLabel(
+            discovery_header, text="Discover music",
+            font=UITheme.F(14, "bold"), anchor="w")
+        self.dl_context_title.pack(side="left", fill="x", expand=True)
+        self.track_search_provider_var = ctk.StringVar(value="YouTube")
+        self.track_search_provider = ctk.CTkSegmentedButton(
+            discovery_header, values=["YouTube", "SoundCloud"],
+            variable=self.track_search_provider_var,
+            command=self._on_track_search_provider_change,
+            height=UITheme.H_SM,
+        )
+        self.track_search_provider.pack(side="right")
+        setattr(self.track_search_provider, "_theme_roles",
+                {"selected_color": "accent",
+                 "selected_hover_color": "accent_hover",
+                 "unselected_color": "sidebar",
+                 "unselected_hover_color": "hover",
+                 "text_color": "text", "fg_color": "surface"})
+        self.dl_context_hint = ctk.CTkLabel(
+            self.dl_context_frame,
+            text="Paste a link above, or search for a track on YouTube or SoundCloud.",
+            font=UITheme.F(11),
+            text_color=pal.get("sub", "#95a5a6"),
+            anchor="w", justify="left",
+        )
+        setattr(self.dl_context_hint, "_theme_roles", {"text_color": "sub"})
+        self.dl_context_hint.pack(fill="x", pady=(0, 8))
+        self.dl_search_results = ctk.CTkFrame(
+            self.dl_context_frame, fg_color="transparent")
+        self.dl_search_results.pack(fill="x")
+        self._track_search_generation = 0
+        self._track_search_after = None
 
         # Outdated yt-dlp notice (hidden until a check finds one).
         self._ytdlp_notice_lbl = ctk.CTkLabel(
@@ -1218,7 +1284,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self.url_entry.delete(0, "end")
         except Exception:
             pass
-        self._sync_clear_btn()
+        self._on_url_changed()
         return "break"
 
     def _on_clear_url_clicked(self):
@@ -1260,7 +1326,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.url_entry.delete(0, "end")
         self.url_entry.insert(0, text)
         self.url_entry.focus_set()
-        self._sync_clear_btn()
+        self._on_url_changed()
         return "break"
 
     def _on_url_enter(self, _event=None):
@@ -1311,14 +1377,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         pal = getattr(self, "_palette", {}) or {}
         accent = pal.get("accent", UITheme.COLOR_PRIMARY)
         accent_hover = pal.get("accent_hover", UITheme.COLOR_PRIMARY)
-        inactive_fg = pal.get("sub", UITheme.COLOR_GRAY)
+        inactive_fg = pal.get("text", "#ecf0f1")
         hover_fill = pal.get("hover", UITheme.SIDEBAR_HOVER)
         text_color = pal.get("text", "#ecf0f1")
+        active_text = _on_color(
+            accent, text_color, pal.get("bg", "#1e1e24"))
         if fmt == "audio":
-            self.btn_fmt_audio.configure(fg_color=accent, text_color="#ffffff", hover_color=accent_hover, border_width=0)
+            self.btn_fmt_audio.configure(fg_color=accent, text_color=active_text, hover_color=accent_hover, border_width=0)
             self.btn_fmt_video.configure(fg_color="transparent", text_color=inactive_fg, border_width=0, hover_color=hover_fill)
-            self.btn_fmt_video.bind("<Enter>", lambda e: self.btn_fmt_video.configure(text_color=text_color))
-            self.btn_fmt_video.bind("<Leave>", lambda e: self.btn_fmt_video.configure(text_color=inactive_fg))
             try:
                 self.quality_lbl.configure(text="Audio quality:")
             except Exception:
@@ -1331,9 +1397,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 pass
         else:
             self.btn_fmt_audio.configure(fg_color="transparent", text_color=inactive_fg, border_width=0, hover_color=hover_fill)
-            self.btn_fmt_video.configure(fg_color=accent, text_color="#ffffff", border_width=0, hover_color=accent_hover)
-            self.btn_fmt_audio.bind("<Enter>", lambda e: self.btn_fmt_audio.configure(text_color=text_color))
-            self.btn_fmt_audio.bind("<Leave>", lambda e: self.btn_fmt_audio.configure(text_color=inactive_fg))
+            self.btn_fmt_video.configure(fg_color=accent, text_color=active_text, border_width=0, hover_color=accent_hover)
             try:
                 self.quality_lbl.configure(text="Video quality:")
             except Exception:
@@ -1344,6 +1408,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             except Exception:
                 pass
         self._audit_toggle_contrast()
+
+    def _on_url_entry_focus(self, focused: bool):
+        pal = getattr(self, "_palette", {}) or {}
+        color = (pal.get("accent", UITheme.COLOR_PRIMARY) if focused else
+                 pal.get("hover", UITheme.SIDEBAR_HOVER))
+        self.url_entry.configure(border_color=color)
 
     def _audit_toggle_contrast(self):
         pairs = [
@@ -1406,7 +1476,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # Clear the input so the next link can be pasted immediately.
         try:
             self.url_entry.delete(0, "end")
-            self._sync_clear_btn()
+            self._on_url_changed()
         except Exception:
             pass
         noun = "item" if added == 1 else "items"
@@ -2074,6 +2144,14 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     setattr(self.dl_status, "_theme_roles", {"text_color": role})
             except Exception:
                 pass
+            try:
+                self.dl_progress_status.configure(
+                    text=text, text_color=themed)
+                if role:
+                    setattr(self.dl_progress_status, "_theme_roles",
+                            {"text_color": role})
+            except Exception:
+                pass
             # The pill's dot echoes the status color.
             try:
                 self._status_dot.configure(text_color=themed)
@@ -2114,55 +2192,137 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
 
     # --- TAB 2 DESIGN ---
     def build_studio_view(self):
-        self.file_frame = ctk.CTkFrame(self.tab_studio, fg_color="transparent")
-        self.file_frame.pack(pady=(12,4), padx=20, fill="x")
-        self.file_lbl = ctk.CTkLabel(self.file_frame, text="Load a music file...", font=UITheme.F(12, "italic"), text_color="#95a5a6")
-        self.file_lbl.pack(side="left", padx=10, pady=10)
+        scroll = ctk.CTkScrollableFrame(self.tab_studio, fg_color="transparent")
+        scroll.pack(fill="both", expand=True,
+                    padx=UITheme.RADIUS_CARD, pady=UITheme.RADIUS_CARD)
+        self.studio_scroll = scroll
+
+        self.studio_file_card = self._settings_card(scroll, "1. Choose audio")
+        self.studio_file_card.pack(fill="x", pady=(0, 8))
+        file_help = ctk.CTkLabel(
+            self.studio_file_card,
+            text="Select a local audio track to preview or remix.",
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+        )
+        setattr(file_help, "_theme_roles", {"text_color": "sub"})
+        file_help.pack(fill="x", padx=16, pady=(0, 8))
+        file_row = ctk.CTkFrame(self.studio_file_card, fg_color="transparent")
+        file_row.pack(fill="x", padx=16, pady=(0, 12))
+        self.file_frame = file_row
+        self.studio_file_row = file_row
+        self.file_lbl = ctk.CTkLabel(
+            file_row, text="No audio selected", font=UITheme.F(12),
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+            anchor="w",
+        )
+        setattr(self.file_lbl, "_theme_roles", {"text_color": "sub"})
+        self.file_lbl.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.btn_browse_studio = ctk.CTkButton(
-            self.file_frame, text="Browse Audio", width=100,
+            file_row, text="Choose audio", width=140,
             command=self.load_studio_file)
-        self.btn_browse_studio.pack(side="right", padx=10, pady=10)
+        self.btn_browse_studio.pack(side="right")
         self._style_button(self.btn_browse_studio, "secondary")
 
-        self.sp_lbl = ctk.CTkLabel(self.tab_studio, text="Speed: 0.85x", font=UITheme.F(14, "bold"))
-        self.sp_lbl.pack(anchor="w", padx=20, pady=(6,0))
-        self.sp_sld = ctk.CTkSlider(self.tab_studio, from_=0.5, to=1.5, command=lambda v: self.sp_lbl.configure(text=f"Speed: {float(v):.2f}x"))  # type: ignore[arg-type]
+        self.studio_effects_card = self._settings_card(
+            scroll, "2. Adjust the sound")
+        self.studio_effects_card.pack(fill="x", pady=(0, 8))
+        effects_help = ctk.CTkLabel(
+            self.studio_effects_card,
+            text="Changes apply to both preview and exported audio.",
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+        )
+        setattr(effects_help, "_theme_roles", {"text_color": "sub"})
+        effects_help.pack(fill="x", padx=16, pady=(0, 8))
 
-
+        speed_row = ctk.CTkFrame(
+            self.studio_effects_card, fg_color="transparent")
+        speed_row.pack(fill="x", padx=16)
+        ctk.CTkLabel(speed_row, text="Playback speed",
+                     font=UITheme.F(12, "bold"),
+                     anchor="w").pack(side="left")
+        self.sp_lbl = ctk.CTkLabel(
+            speed_row, text="0.85x", font=UITheme.F(12, "bold"),
+            anchor="e")
+        self.sp_lbl.pack(side="right")
+        self.sp_sld = ctk.CTkSlider(
+            self.studio_effects_card, from_=0.5, to=1.5,
+            command=lambda v: self.sp_lbl.configure(
+                text=f"{float(v):.2f}x"))
         self.sp_sld.set(0.85)
-        self.sp_sld.pack(fill="x", padx=20, pady=(4,10))
+        self.sp_sld.pack(fill="x", padx=16, pady=(3, 10))
 
-        self.rv_lbl = ctk.CTkLabel(self.tab_studio, text="Reverb Depth: 40%", font=UITheme.F(14, "bold"))
-        self.rv_lbl.pack(anchor="w", padx=20, pady=(4,0))
-        self.rv_sld = ctk.CTkSlider(self.tab_studio, from_=0.0, to=1.0, command=lambda v: self.rv_lbl.configure(text=f"Reverb Depth: {int(float(v)*100)}%"))  # type: ignore[arg-type]
-
-
+        reverb_row = ctk.CTkFrame(
+            self.studio_effects_card, fg_color="transparent")
+        reverb_row.pack(fill="x", padx=16)
+        ctk.CTkLabel(reverb_row, text="Reverb depth",
+                     font=UITheme.F(12, "bold"),
+                     anchor="w").pack(side="left")
+        self.rv_lbl = ctk.CTkLabel(
+            reverb_row, text="40%", font=UITheme.F(12, "bold"),
+            anchor="e")
+        self.rv_lbl.pack(side="right")
+        self.rv_sld = ctk.CTkSlider(
+            self.studio_effects_card, from_=0.0, to=1.0,
+            command=lambda v: self.rv_lbl.configure(
+                text=f"{int(float(v) * 100)}%"))
         self.rv_sld.set(0.40)
-        self.rv_sld.pack(fill="x", padx=20, pady=(4,10))
+        self.rv_sld.pack(fill="x", padx=16, pady=(3, 14))
 
-        self.ctrl_frame = ctk.CTkFrame(self.tab_studio, fg_color="transparent")
-        self.ctrl_frame.pack(pady=(6,10))
-        self.btn_play = ctk.CTkButton(self.ctrl_frame, text="Play", width=115, command=self.play_preview)
-        self.btn_play.grid(row=0, column=0, padx=6)
+        self.studio_export_card = self._settings_card(
+            scroll, "3. Preview and export")
+        self.studio_export_card.pack(fill="x", pady=(0, 8))
+        export_help = ctk.CTkLabel(
+            self.studio_export_card,
+            text="Preview your current settings, or render the full track "
+                 "to an MP3.",
+            font=UITheme.F(11), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+        )
+        setattr(export_help, "_theme_roles", {"text_color": "sub"})
+        export_help.pack(fill="x", padx=16, pady=(0, 8))
+        self.ctrl_frame = ctk.CTkFrame(
+            self.studio_export_card, fg_color="transparent")
+        self.ctrl_frame.pack(fill="x", padx=16, pady=(0, 8))
+        self.btn_play = ctk.CTkButton(
+            self.ctrl_frame, text="Preview", width=115,
+            command=self.play_preview)
+        self.btn_play.pack(side="left", expand=True, fill="x", padx=(0, 6))
         self._style_button(self.btn_play, "primary", icon="play")
-        self.btn_stop = ctk.CTkButton(self.ctrl_frame, text="Stop", width=115, command=self.stop_preview, state="disabled")
-        self.btn_stop.grid(row=0, column=1, padx=6)
+        self.btn_stop = ctk.CTkButton(
+            self.ctrl_frame, text="Stop", width=115,
+            command=self.stop_preview, state="disabled")
+        self.btn_stop.pack(side="left", expand=True, fill="x", padx=(6, 0))
         self._style_button(self.btn_stop, "danger", icon="stop")
 
-        self.btn_export = ctk.CTkButton(self.tab_studio, text="Export Remix", font=UITheme.F(12, "bold"), width=280, height=40, command=self.export_studio_track)
-        self.btn_export.pack(pady=(4,10))
+        self.btn_export = ctk.CTkButton(
+            self.studio_export_card, text="Export Remix",
+            font=UITheme.F(12, "bold"), width=280, height=40,
+            command=self.export_studio_track)
+        self.btn_export.pack(fill="x", padx=16, pady=(0, 8))
         self._style_button(self.btn_export, "primary", icon="download")
 
-        self.studio_progress_bar = ctk.CTkProgressBar(self.tab_studio, width=300)
+        self.studio_progress_bar = ctk.CTkProgressBar(
+            self.studio_export_card, width=300)
         self.studio_progress_bar.set(0)
-        self.studio_progress_bar.pack(pady=(4, 10), padx=20, fill="x")
+        self.studio_progress_bar.pack(
+            pady=(0, 12), padx=16, fill="x")
         self.tab_studio.place(relx=0, rely=0, relwidth=1, relheight=1)
 
     def load_studio_file(self):
         sel = filedialog.askopenfilename(title="Select File", filetypes=[("Audio Assets", "*.mp3 *.wav *.flac *.m4a")])
         if sel:
             self.studio_file_path = sel
-            self.file_lbl.configure(text=os.path.basename(sel), text_color="#2ecc71")
+            self.file_lbl.configure(
+                text=os.path.basename(sel),
+                text_color=(getattr(self, "_palette", {}) or {}).get(
+                    "success", "#2ecc71"))
+            setattr(self.file_lbl, "_theme_roles", {"text_color": "success"})
 
     def build_customization_view(self):
         # Page title lives in the header only — no in-page H1.
@@ -2244,21 +2404,34 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.sb_peek_chk.pack(anchor="w", padx=16, pady=(0, 0))
         ctk.CTkLabel(
             rail_card,
-            text="Off by default — a rail that opens itself every time the pointer "
-                 "crosses it gets in the way. When on, only the icon column arms "
-                 "it, nothing moves but the width, and it closes as you leave.",
+            text="Opens after a brief pause over an icon and closes when the "
+                 "pointer leaves.",
             font=UITheme.F(11), text_color="#95a5a6", anchor="w",
             wraplength=560, justify="left").pack(anchor="w", padx=16, pady=(0, 4))
+
+        motion_divider = ctk.CTkFrame(
+            rail_card, height=1,
+            fg_color=(getattr(self, "_palette", {}) or {}).get(
+                "hover", UITheme.SIDEBAR_HOVER))
+        motion_divider.pack(fill="x", padx=16, pady=(10, 8))
+        setattr(motion_divider, "_theme_roles", {"fg_color": "hover"})
+        motion_heading = ctk.CTkLabel(
+            rail_card, text="Navigation animation",
+            font=UITheme.F(11, "bold"), anchor="w",
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "text", "#ecf0f1"))
+        motion_heading.pack(fill="x", padx=16, pady=(0, 4))
+        setattr(motion_heading, "_theme_roles", {"text_color": "text"})
 
         self.nav_anim_var = tk.BooleanVar(value=bool(self.nav_anim_enabled))
         self.nav_anim_chk = ctk.CTkCheckBox(
             rail_card, text="Animate the accent pill and the rail's slide",
             variable=self.nav_anim_var, command=self._on_nav_anim_pref)
-        self.nav_anim_chk.pack(anchor="w", padx=16, pady=(0, 2))
+        self.nav_anim_chk.pack(anchor="w", padx=16, pady=(0, 6))
 
-        ctk.CTkLabel(rail_card, text="Motion length (lower is snappier):",
+        ctk.CTkLabel(rail_card, text="Transition speed · fewer frames is faster",
                      font=UITheme.F(12), anchor="w").pack(anchor="w", padx=16,
-                                                          pady=(2, 0))
+                                                          pady=(0, 2))
         self.nav_anim_speed_slider = ctk.CTkSlider(
             rail_card, from_=4, to=30, number_of_steps=26,
             command=self._on_nav_speed)
@@ -2336,23 +2509,63 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         tuning.pack(fill="x", padx=0, pady=(0, 8))
 
         self.aria2_var = tk.BooleanVar(value=_saved_aria)
-        self.aria2_chk = ctk.CTkCheckBox(tuning, text="Enable aria2 external downloader", variable=self.aria2_var)
+        self.aria2_chk = ctk.CTkCheckBox(
+            tuning, text="Enable aria2 external downloader",
+            variable=self.aria2_var, command=self._on_aria2_toggle)
         self.aria2_chk.pack(anchor="w", padx=16, pady=(4, 0))
-        ctk.CTkLabel(tuning, text="Uses aria2 for parallel connections (faster downloads).", font=UITheme.F(11), text_color="#95a5a6", wraplength=600, justify="left").pack(anchor="w", padx=16, pady=(0, 2))
+        aria2_help = ctk.CTkLabel(
+            tuning,
+            text="Uses aria2 for parallel connections when aria2 is installed.",
+            font=UITheme.F(11), text_color="#95a5a6", wraplength=600,
+            justify="left",
+        )
+        setattr(aria2_help, "_theme_roles", {"text_color": "sub"})
+        aria2_help.pack(anchor="w", padx=16, pady=(0, 2))
 
-        ctk.CTkLabel(tuning, text="aria2 connections:  (max 16 — aria2 hard limit)", font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(2, 0))
-        self.aria2_conn_slider = ctk.CTkSlider(tuning, from_=1, to=16, number_of_steps=15)
+        aria2_row = ctk.CTkFrame(tuning, fg_color="transparent")
+        aria2_row.pack(fill="x", padx=16, pady=(2, 0))
+        ctk.CTkLabel(
+            aria2_row, text="Connections per server (aria2 only; max 16)",
+            font=UITheme.F(12),
+        ).pack(side="left")
+        self.aria2_conn_value = ctk.CTkLabel(
+            aria2_row, text=str(_saved_connections), font=UITheme.F(12, "bold"))
+        self.aria2_conn_value.pack(side="right")
+        self.aria2_conn_slider = ctk.CTkSlider(
+            tuning, from_=1, to=downloader.ARIA2_MAX_CONNECTIONS,
+            number_of_steps=downloader.ARIA2_MAX_CONNECTIONS - 1,
+            command=lambda value: self.aria2_conn_value.configure(
+                text=str(int(float(value)))))
         self.aria2_conn_slider.set(_saved_connections)
         self.aria2_conn_slider.pack(padx=16, pady=(0, 2), fill="x")
+        self._on_aria2_toggle()
 
-        ctk.CTkLabel(tuning, text="Concurrent fragment downloads:", font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(2, 0))
+        fragment_row = ctk.CTkFrame(tuning, fg_color="transparent")
+        fragment_row.pack(fill="x", padx=16, pady=(2, 0))
+        ctk.CTkLabel(
+            fragment_row, text="Concurrent fragment downloads (independent)",
+            font=UITheme.F(12),
+        ).pack(side="left")
+        self.concurrent_frag_value = ctk.CTkLabel(
+            fragment_row, text=str(_saved_frags), font=UITheme.F(12, "bold"))
+        self.concurrent_frag_value.pack(side="right")
         # Range comes from downloader so the slider and the clamp that reads the
         # saved value can never disagree about what the maximum is.
         self.concurrent_frag_slider = ctk.CTkSlider(
             tuning, from_=1, to=downloader.FRAGMENT_DOWNLOADS_MAX,
-            number_of_steps=downloader.FRAGMENT_DOWNLOADS_MAX - 1)
+            number_of_steps=downloader.FRAGMENT_DOWNLOADS_MAX - 1,
+            command=lambda value: self.concurrent_frag_value.configure(
+                text=str(int(float(value)))))
         self.concurrent_frag_slider.set(_saved_frags)
         self.concurrent_frag_slider.pack(padx=16, pady=(0, 2), fill="x")
+        fragment_help = ctk.CTkLabel(
+            tuning,
+            text="Controls fragment parallelism separately from aria2 connections.",
+            font=UITheme.F(11), text_color="#95a5a6", wraplength=600,
+            justify="left",
+        )
+        setattr(fragment_help, "_theme_roles", {"text_color": "sub"})
+        fragment_help.pack(anchor="w", padx=16, pady=(0, 4))
 
         ctk.CTkLabel(tuning, text="SoundCloud downloads:", font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(2, 0))
         self.soundcloud_var = tk.BooleanVar(value=bool(self._prefs.get("soundcloud_direct_first", True)))
@@ -2369,82 +2582,57 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self.video_res_menu.pack(anchor="w", padx=16, pady=(0, 4))
         self._style_option_menu(self.video_res_menu)
 
-        # Cookies file (optional) for age-gated/region-blocked videos.
-        ctk.CTkLabel(tuning, text="Cookies file (optional, Netscape format):",
-                     font=UITheme.F(12)).pack(anchor="w", padx=16, pady=(6, 0))
-        self.cookies_file_var = tk.StringVar(
-            value=str(self._prefs.get("cookies_file", "")))
-        self.cookies_file_entry = ctk.CTkEntry(
-            tuning, textvariable=self.cookies_file_var, width=320)
-        self.cookies_file_entry.pack(anchor="w", padx=16, pady=(0, 2))
-        self.cookies_browse_btn = ctk.CTkButton(
-            tuning, text="Browse", width=80,
-            command=self._choose_cookies_file)
-        self.cookies_browse_btn.pack(anchor="w", padx=16, pady=(0, 2))
-        self._style_button(self.cookies_browse_btn, "ghost", bordered=True)
-        ctk.CTkButton(
-            tuning, text="Clear", width=80,
-            command=self._clear_cookies_file).pack(anchor="w", padx=16, pady=(0, 6))
+        save_hint = ctk.CTkLabel(
+            tuning,
+            text=("SoundCloud and video resolution save immediately. "
+                  "Apply aria2 and fragment settings below."),
+            font=UITheme.F(11), text_color="#95a5a6", wraplength=600,
+            justify="left",
+        )
+        setattr(save_hint, "_theme_roles", {"text_color": "sub"})
+        save_hint.pack(anchor="w", padx=16, pady=(2, 0))
 
         self.apply_perf_btn = ctk.CTkButton(tuning, text="Apply Performance Settings", command=self.apply_performance_settings, width=260)
         self.apply_perf_btn.pack(anchor="w", padx=16, pady=(6, 14))
         self._style_button(self.apply_perf_btn, "primary")
 
+        self.perf_status = ctk.CTkLabel(
+            tuning,
+            text=(f"Current: aria2 {'enabled' if _saved_aria else 'disabled'} · "
+                  f"{_saved_connections} connections · "
+                  f"{_saved_frags} concurrent fragments"),
+            font=UITheme.F(11),
+            text_color=(getattr(self, "_palette", {}) or {}).get(
+                "sub", "#95a5a6"),
+            anchor="w",
+        )
+        setattr(self.perf_status, "_theme_roles", {"text_color": "sub"})
+        self.perf_status.pack(anchor="w", padx=16, pady=(0, 14))
+
         # Card 2: maintenance actions.
         maint = self._settings_card(scroll, "Maintenance")
         maint.pack(fill="x", padx=0, pady=(0, 0))
-
-        # Engine (yt-dlp) updater: lives here in Performance so it is next to
-        # the other download-tuning controls, not just on the Update Center page.
-        engine = self._settings_card(maint, "Downloader engine (yt-dlp)")
-        engine.pack(fill="x", padx=0, pady=(8, 8))
-        self.ytdlp_update_btn = ctk.CTkButton(
-            engine, text="⮔ Update yt-dlp", width=200, cursor="hand2",
-            command=self.update_ytdlp_clicked,
-        )
-        self.ytdlp_update_btn.pack(anchor="w", padx=16, pady=(4, 1))
-        self._style_button(self.ytdlp_update_btn, "secondary", icon="download")
-        self.ytdlp_ver_lbl = ctk.CTkLabel(
-            engine,
-            text=f"yt-dlp version: {downloader.get_ytdlp_version() or 'not detected'}",
-            font=UITheme.F(10),
-            text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            anchor="w")
-        self.ytdlp_ver_lbl.pack(anchor="w", padx=16, pady=(0, 4))
-
-        # Unattended startup installs: opt-out for packaged builds only
-        # (frozen engine = a user-space copy of yt-dlp.exe that -U rewrites;
-        # the dev environment is never pip-mutated silently, so the toggle
-        # is inert there - see _ytdlp_auto_update_allowed).
-        self.engine_auto_var = tk.BooleanVar(
-            value=bool((getattr(self, "_prefs", None) or {}).get(
-                "engine_auto_update", True)))
-        ctk.CTkCheckBox(
-            engine,
-            text="Update the engine automatically at startup",
-            variable=self.engine_auto_var,
-            command=self._apply_engine_auto_pref,
-        ).pack(anchor="w", padx=16, pady=(0, 12))
 
         self.clear_cache_btn = ctk.CTkButton(
             maint, text="Clear Download Cache", width=260,
             command=self.clear_download_cache,
         )
-        self.clear_cache_btn.pack(anchor="w", padx=16, pady=(8, 2))
+        self.clear_cache_btn.pack(anchor="w", padx=16, pady=(0, 2))
         # Ghost, not a full danger fill: this opens a confirmation dialog and
         # only deletes a rebuildable cache, so it should not be the loudest
         # control in the Maintenance list. Same reasoning as Clear History.
         self._style_button(self.clear_cache_btn, "ghost", bordered=True, icon="trash")
 
-        self.perf_status = ctk.CTkLabel(maint, text="Current: default", font=UITheme.F(11), text_color="#95a5a6", anchor="w")
-        self.perf_status.pack(anchor="w", padx=16, pady=(2, 14))
+    def _on_aria2_toggle(self):
+        """Only enable the connection slider when its downloader is enabled."""
+        self.aria2_conn_slider.configure(
+            state="normal" if self.aria2_var.get() else "disabled")
 
     def apply_performance_settings(self):
         cfg = {
             'use_aria2': bool(self.aria2_var.get()),
             'aria2_connections': downloader._clamp_aria2_connections(self.aria2_conn_slider.get()),
             'concurrent_fragment_downloads': int(self.concurrent_frag_slider.get()),
-            'cookies_file': str(self.cookies_file_var.get()).strip(),
         }
         try:
             downloader.set_performance_config(cfg)
@@ -2452,10 +2640,20 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self._set_pref('use_aria2', cfg['use_aria2'])
             self._set_pref('aria2_connections', cfg['aria2_connections'])
             self._set_pref('concurrent_fragment_downloads', cfg['concurrent_fragment_downloads'])
-            self._set_pref('cookies_file', cfg['cookies_file'])
-            self.perf_status.configure(text=f"Current: aria2={cfg['use_aria2']}, conns={cfg['aria2_connections']}, frags={cfg['concurrent_fragment_downloads']}")
+            self._on_aria2_toggle()
             # Honest feedback
             _aria2_path = downloader.get_fast_downloader_path() if cfg['use_aria2'] else None
+            _aria2_summary = (
+                f"aria2 enabled · {cfg['aria2_connections']} connections"
+                if cfg['use_aria2'] and _aria2_path else
+                "aria2 enabled, but aria2c was not found"
+                if cfg['use_aria2'] else
+                f"aria2 disabled · {cfg['aria2_connections']} connections saved"
+            )
+            self.perf_status.configure(
+                text=(f"Applied: {_aria2_summary} · "
+                      f"{cfg['concurrent_fragment_downloads']} concurrent "
+                      "fragments"))
             if cfg['use_aria2']:
                 if _aria2_path:
                     self.show_toast(
@@ -2503,18 +2701,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             "#95a5a6",
         )
 
-    def _choose_cookies_file(self):
-        choice = filedialog.askopenfilename(
-            title="Select cookies file (Netscape format)",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
-        if choice:
-            self.cookies_file_var.set(choice)
-            self.apply_performance_settings()
-
-    def _clear_cookies_file(self):
-        self.cookies_file_var.set("")
-        self.apply_performance_settings()
-
     def _on_video_res_change(self, value):
         """Persist the max video resolution preference live (no Apply needed)."""
         res = str(value)
@@ -2541,12 +2727,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     )
 
     def _discover_theme_roles(self, w) -> dict:
-        """The option->role pairs *w*'s current colours match in the legacy table.
+        """Find palette roles for a widget's current string-valued colours.
 
-        The startup sweep in apply_color_theme does this for every widget once,
-        but a page built after startup never passes through that sweep - so a
-        lazily built label carrying an old hardcoded hex would keep it through
-        every later theme switch. Same table, per widget, at registration time.
+        Legacy hexes cover old build sites; looking at the active palette also
+        catches custom roles and colors on widgets added after their page build.
         """
         found = {}
         for opt in ('fg_color', 'hover_color', 'border_color',
@@ -2560,6 +2744,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             if not isinstance(cur, str) or cur.lower() in ('transparent', ''):
                 continue
             role = LEGACY_HEX_ROLES.get(cur.lower())
+            if role is None:
+                role = next(
+                    (name for name, value in self._palette.items()
+                     if isinstance(value, str)
+                     and value.lower() == cur.lower()),
+                    None,
+                )
             if role:
                 found[opt] = role
         return found
@@ -2567,10 +2758,9 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
     def _register_themed_widgets(self, root=None):
         """Index *root*'s subtree into the theme registry.
 
-        Runs once per page right after it is built (and once for the shell at
-        startup). Each entry remembers the widget and its option->role map,
-        so a later theme switch configures exactly those options instead of
-        probing every widget for options it may not have.
+        Runs after page builds and before theme switches to include dynamic
+        rows. Each entry remembers the widget and its option->role map, so a
+        theme switch configures only options that belong to the palette.
         """
         if root is None:
             root = self
@@ -2585,7 +2775,7 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 continue
             try:
                 roles = getattr(w, "_theme_roles", None)
-                if not roles:
+                if roles is None:
                     # No explicit tag: look the current colours up once so a
                     # page built after startup is not frozen at its build hex.
                     roles = self._discover_theme_roles(w)
@@ -2616,20 +2806,13 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     return
                 self._page_frames[name] = getattr(self, attr, None)
                 self._built_pages.add(name)
-                # Re-run the current theme over the new widgets: they were
-                # built from the active palette, but the two type walks also
-                # have to see them. The role registry only records widgets
-                # that carry _theme_roles; the scroll well's canvas, its
-                # hide-until-hover bar and the CTk-default slider tracks are
-                # painted by _style_form_controls / _style_composites, which
-                # ran once at startup - before this page existed. Without
-                # this the first visit shows CustomTkinter's greys until the
-                # next theme switch.
+                # Run the same full palette pass as a theme switch. Building
+                # controls from the active palette is not enough: legacy
+                # colors and nested widgets can still retain their previous
+                # values until the role registry is replayed.
                 try:
-                    self._register_themed_widgets(
-                        getattr(self, attr, None))
-                    self._style_form_controls()
-                    self._style_composites()
+                    self.apply_color_theme(
+                        self._color_theme_name, persist=False)
                 except Exception:
                     logger.debug("Theme styling for %r failed", name,
                                  exc_info=True)
@@ -2685,7 +2868,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             self.update_idletasks()
         except Exception:
             pass
-
         btn = self.nav_buttons.get(name)
         if btn is not None:
             try:
@@ -4088,8 +4270,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             "button_hover_color": pal.get("accent_hover", "#2980b9"),
             "text_color": text,
             "corner_radius": UITheme.RADIUS_FIELD,
-            "border_width": UITheme.BORDER_W,
-            "border_color": pal.get("hover", "#34495e"),
         }
         try:
             menu.configure(**colors)
@@ -4100,7 +4280,6 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                 "fg_color": "sidebar_active",
                 "button_color": "accent",
                 "button_hover_color": "accent_hover",
-                "border_color": "hover",
                 "text_color": "text" if text == pal.get("text") else "bg",
             })
         except Exception:
@@ -4195,12 +4374,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         card = ctk.CTkFrame(
             parent,
             corner_radius=UITheme.RADIUS_LG,
-            fg_color=pal.get("sidebar", "#1b2532"),
+            fg_color=pal.get("surface", UITheme.SURFACE_BG),
             border_width=1,
             border_color=pal.get("hover", "#34495e"),
         )
         setattr(card, "_theme_roles",
-                {"fg_color": "sidebar", "border_color": "hover"})
+                {"fg_color": "surface", "border_color": "hover"})
         hdr = ctk.CTkLabel(
             card, text=title, font=UITheme.F(13, "bold"), anchor="w",
             text_color=pal.get("text", "#ecf0f1"),
@@ -4337,6 +4516,17 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                     dropdown.configure(fg_color=panel, hover_color=trough,
                                        text_color=panel_text)
                     done += 1
+                elif isinstance(widget, ctk.CTkSegmentedButton):
+                    widget.configure(
+                        fg_color=pal.get("surface", UITheme.SURFACE_BG),
+                        selected_color=accent,
+                        selected_hover_color=pal.get(
+                            "accent_hover", accent),
+                        unselected_color=pal.get("sidebar", panel),
+                        unselected_hover_color=trough,
+                        text_color=pal.get("text", "#ecf0f1"),
+                    )
+                    done += 1
             except Exception:
                 logger.debug("Styling a composite widget failed", exc_info=True)
         return done
@@ -4393,14 +4583,23 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         self._custom_mode = src.get("mode") or "dark"
         self._apply_custom_palette()
 
-    def apply_color_theme(self, name):
+    def apply_color_theme(self, name, *, persist: bool = True):
         """Apply a named color theme to the entire UI and remember it."""
         pal = COLOR_THEMES.get(name)
         if not pal:
             return
+        # Pages can create rows and labels after their initial build, and
+        # palette-derived colors in custom themes are not in the legacy table.
+        # Discover them against the palette they currently display before
+        # replacing it, then the normal registry pass can repaint them.
+        try:
+            self._register_themed_widgets()
+        except Exception:
+            logger.debug("Theme registry refresh failed", exc_info=True)
         self._color_theme_name = name
         self._palette = dict(pal)
-        self._set_pref('color_theme', name)
+        if persist:
+            self._set_pref('color_theme', name)
 
         # Keep the dropdown label in sync when switched via swatches/shortcut.
         try:
@@ -4474,9 +4673,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
             for w in self._iter_widgets():
                 try:
                     roles = getattr(w, '_theme_roles', None)
+                    if roles == {}:
+                        continue
                     if roles is None:
                         roles = {}
-                        setattr(w, '_theme_roles', roles)
                 except Exception:
                     continue
                 for opt in roles_seen:
@@ -4511,6 +4711,11 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                         w.configure(**{opt: new_val})
                     except Exception:
                         pass
+                if roles:
+                    try:
+                        setattr(w, '_theme_roles', roles)
+                    except Exception:
+                        pass
 
         # Structural pieces that don't use legacy hexes:
         try:
@@ -4531,6 +4736,10 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
                         pal.get('accent', '#3498db'),
                         pal.get('text', '#ecf0f1'), pal.get('bg', '#1e1e24')),
                 )
+                if (qrows.size() == 1
+                        and qrows.get(0).startswith("  Queue is empty")):
+                    qrows.itemconfig(
+                        0, foreground=pal.get('sub', '#95a5a6'))
         except Exception:
             pass
         # Form controls (checkboxes, sliders, progress bars) are painted from
@@ -4561,6 +4770,12 @@ class UniversalAudioStudio(ctk.CTk, UiSplitsMixin, QueuePageMixin,
         # a repaint - this used to hand-tune two labels and leave the rest of
         # the rail on the previous theme's colors.
         self._repaint_nav_rows()
+
+        # These segmented buttons use an active/inactive recipe instead of
+        # palette-role tags. Reapply it after the rest of the theme so the
+        # selected format and its contrast stay correct on every palette.
+        if hasattr(self, "_dl_format"):
+            self._set_dl_format(self._dl_format.get())
 
         # Swatch selection ring: the clickable swatch dots are gone (theme
         # picking lives in the dropdown now), so there is nothing left to ring.
@@ -4712,5 +4927,3 @@ if __name__ == "__main__":
 
     _setup_logging()
     main.run(UniversalAudioStudio)
-
-

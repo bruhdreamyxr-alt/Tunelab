@@ -99,12 +99,15 @@ class HistoryPageMixin:
         )
         self.history_view_toggle.pack(side="right", padx=(0, 12))
         setattr(self.history_view_toggle, "_theme_roles",
-                {"selected_color": "accent", "unselected_color": "sidebar",
-                 "text_color": "text"})
+                {"selected_color": "accent",
+                 "selected_hover_color": "accent_hover",
+                 "unselected_color": "sidebar",
+                 "unselected_hover_color": "hover",
+                 "text_color": "text", "fg_color": "surface"})
         self.history_view_toggle.set(self.history_view_var.get())
 
-        # Search bar + sort filters on one header row, so the page opens with
-        # one compact control band instead of two stacked strips.
+        # Give search the full row; keeping three sort controls beside it made
+        # the field cramped at the app's minimum window width.
         search_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
         search_row.pack(fill="x", padx=20, pady=(0, 8))
         self.history_search_var = ctk.StringVar()
@@ -140,19 +143,23 @@ class HistoryPageMixin:
         self._history_search_after = None
         self.history_search_var.trace_add("write", lambda *_: self._schedule_history_search())
 
-        # Sort filters on the same row.
-        ctk.CTkLabel(search_row, text="Sort by:", font=UITheme.F(11),
-                     text_color=_sec).pack(side="left", padx=(0, 4))
+        sort_row = ctk.CTkFrame(self.tab_history, fg_color="transparent")
+        sort_row.pack(fill="x", padx=20, pady=(0, 8))
+        ctk.CTkLabel(sort_row, text="Sort by:", font=UITheme.F(11),
+                     text_color=_sec).pack(side="left", padx=(0, 8))
         self._history_sort_key = "date"
         self._history_sort_reverse = True
+        self._history_sort_buttons = {}
         for lbl, key in [("Date", "date"), ("Title", "title"), ("Status", "status")]:
             btn = ctk.CTkButton(
-                search_row, text=lbl, width=60, height=UITheme.H_XS,
+                sort_row, text=lbl, width=72, height=UITheme.H_XS,
                 font=UITheme.F(10),
                 command=lambda k=key: self._set_history_sort(k),
             )
             self._style_button(btn, "ghost")
             btn.pack(side="left", padx=2)
+            self._history_sort_buttons[key] = (lbl, btn)
+        self._refresh_history_sort_controls()
 
         # Scrollable list of history entries
         _pal = getattr(self, "_palette", {}) or {}
@@ -160,7 +167,7 @@ class HistoryPageMixin:
         _sec = _on_color(_card, _pal.get("text", "#ecf0f1"),
                          _pal.get("sub", UITheme.COLOR_GRAY))
         self.history_scroll = ctk.CTkScrollableFrame(
-            self.tab_history, label_text="Past Downloads",
+            self.tab_history, label_text="",
             corner_radius=UITheme.RADIUS_LG,
             border_width=UITheme.BORDER_W,
             # Left on its defaults this panel kept CustomTkinter's own gray,
@@ -209,7 +216,20 @@ class HistoryPageMixin:
             self._history_sort_key = key
             self._history_sort_reverse = True if key == "date" else False
         self._history_show_all = False
+        self._refresh_history_sort_controls()
         self._refresh_history_view()
+
+    def _refresh_history_sort_controls(self):
+        """Show the active sort key and its current direction."""
+        for key, (label, button) in getattr(
+                self, "_history_sort_buttons", {}).items():
+            active = key == self._history_sort_key
+            direction = "↓" if self._history_sort_reverse else "↑"
+            button.configure(
+                text=f"{label} {direction}" if active else label,
+                font=UITheme.F(10, "bold") if active else UITheme.F(10),
+            )
+            self._style_button(button, "ghost", bordered=active)
 
     def _history_view_pref(self) -> str:
         """The persisted view mode: 'gallery' or 'list' (default)."""
@@ -339,6 +359,8 @@ class HistoryPageMixin:
         if not force and sig == self._history_view_sig:
             return
         self._history_view_sig = sig
+        self.history_scroll.configure(
+            label_text="Past Downloads" if history else "")
 
         for w in self._history_entries_frame.winfo_children():
             w.destroy()
@@ -377,12 +399,24 @@ class HistoryPageMixin:
 
         if not history:
             msg = "No matching history entries." if query else "No download history yet.\nDownloads you complete will appear here."
+            empty = ctk.CTkFrame(self._history_entries_frame,
+                                 fg_color="transparent")
+            empty.pack(fill="x", pady=30)
             ctk.CTkLabel(
-                self._history_entries_frame,
-                text=msg,
-                font=UITheme.F(12),
-                text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"),
-            ).pack(pady=30)
+                empty, text=msg, font=UITheme.F(12),
+                text_color=(getattr(self, "_palette", {}) or {}).get(
+                    "sub", "#95a5a6"),
+                justify="center",
+            ).pack(pady=(0, 10))
+            action = ctk.CTkButton(
+                empty,
+                text="Clear search" if query else "Go to Downloader",
+                width=150, height=UITheme.H_SM,
+                command=(lambda: self.history_search_var.set("")) if query
+                else (lambda: self.show_frame("downloader")),
+            )
+            self._style_button(action, "secondary")
+            action.pack()
             return
 
         # Pagination: the signature guard skips no-op refreshes, but the first
@@ -553,7 +587,8 @@ class HistoryPageMixin:
         file_exists = bool(filepath and os.path.exists(filepath))
 
         # Entry frame
-        row = ctk.CTkFrame(self._history_entries_frame, fg_color="transparent")
+        row = ctk.CTkFrame(
+            self._history_entries_frame, fg_color="transparent")
         row.pack(fill="x", pady=3, padx=4)
 
         # Right: status badge + buttons — packed FIRST so it always keeps its
@@ -603,15 +638,15 @@ class HistoryPageMixin:
         left.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         title_lbl = ctk.CTkLabel(left, text=title, font=UITheme.F(12, "bold"),
-                                 anchor="w", wraplength=380, justify="left")
-        title_lbl.pack(anchor="w")
+                                 anchor="w", wraplength=460, justify="left")
+        title_lbl.pack(anchor="w", pady=(5, 0))
 
         meta_parts = [f"{'Video' if is_video else 'Audio'}  •  {date_str}"]
         meta_parts.append(f"File: {'✓ exists' if file_exists else '✗ missing'}")
         meta_text = "  |  ".join(meta_parts)
         meta_lbl = ctk.CTkLabel(left, text=meta_text, font=UITheme.F(10),
                                  text_color=_sec, anchor="w")
-        meta_lbl.pack(anchor="w")
+        meta_lbl.pack(anchor="w", pady=(0, 5))
 
     # --- Gallery view -------------------------------------------------------
     # A wrapping grid of poster tiles. Thumbnails are extracted locally with
@@ -1002,5 +1037,3 @@ class HistoryPageMixin:
         except Exception as e:
             self._show_error_dialog("Clear History", "Could not clear the history.",
                                     detail=str(e))
-
-

@@ -29,8 +29,10 @@ class QueuePageMixin:
     _style_button: Any
     after: Any
     btn_edit_tags: Any
+    show_frame: Any
     show_toast: Any
     tab_queue: Any
+    url_entry: Any
     update_dl_status: Any
 
 
@@ -112,6 +114,7 @@ class QueuePageMixin:
         # queue follows the active palette like every other widget.
         pal = getattr(self, "_palette", {}) or {}
         self.queue_rows = _QueueRowList(self.tab_queue, palette=pal)
+        self.queue_rows.on_selection_change = self._update_queue_controls
 
         # Bottom toolbar: packed FIRST so it claims its space at the bottom
         # and stays visible at any window height. The listbox below then fills
@@ -166,6 +169,30 @@ class QueuePageMixin:
         self.queue_rows.pack(pady=(14, 0), padx=UITheme.PAD_X,
                              fill="both", expand=True)
 
+        self.queue_empty_state = ctk.CTkFrame(
+            self.queue_rows._parent_frame, fg_color="transparent")
+        ctk.CTkLabel(
+            self.queue_empty_state, text="Your queue is empty",
+            font=UITheme.F(14, "bold"),
+        ).pack(pady=(0, 4))
+        self.queue_empty_hint = ctk.CTkLabel(
+            self.queue_empty_state,
+            text="Add a link on the Downloader page to get started.",
+            font=UITheme.F(11),
+            text_color=pal.get("sub", "#95a5a6"),
+        )
+        setattr(self.queue_empty_hint, "_theme_roles", {"text_color": "sub"})
+        self.queue_empty_hint.pack(pady=(0, 10))
+        self.queue_add_link_btn = ctk.CTkButton(
+            self.queue_empty_state, text="Add a link",
+            width=140, height=UITheme.H_SM,
+            command=self._queue_add_link,
+        )
+        self.queue_add_link_btn.pack()
+        self._style_button(self.queue_add_link_btn, "primary", icon="plus")
+        self.queue_empty_state.place(
+            relx=0.5, rely=0.5, anchor="center")
+
         self.queue_status = ctk.CTkLabel(self.tab_queue, text="Idle", font=UITheme.F(11),
                                          text_color=(getattr(self, "_palette", {}) or {}).get("sub", "#95a5a6"))
         self.queue_status.pack(pady=(6, 0))
@@ -189,14 +216,14 @@ class QueuePageMixin:
             # is only showing the head of it.
             return text if len(text) <= n else text[:n - 1] + "…"
 
-        # Show progress hint for the active item (e.g. "▶ [ACTIVE] 45% ...").
+        # Keep the active state and its progress together for quick scanning.
         if idx == active_idx and item.status == "active":
             progress = getattr(item, '_progress', None)
-            pct = f" {int(progress*100)}%" if progress is not None else ""
+            pct = f"  •  {int(progress*100)}%" if progress is not None else ""
             subject = title or item.url
-            return f"{icon} [ACTIVE]{pct} {_clip(subject, 45)}"
+            return f"{icon}  ACTIVE{pct}   {_clip(subject, 45)}"
         subject = title or item.url
-        return f"{icon} [{item.status.upper():>9}] {_clip(subject, 50)}"
+        return f"{icon}  {item.status.upper():<9}   {_clip(subject, 50)}"
 
     def _rebuild_queue_list(self):
         lb = self.queue_rows
@@ -227,15 +254,15 @@ class QueuePageMixin:
         self._update_queue_status()
 
     def _queue_show_empty_placeholder(self):
-        """Fill the blank row list with a hint so an empty queue reads as
-        'nothing here yet' instead of a dead panel."""
-        pal = getattr(self, "_palette", {}) or {}
-        self.queue_rows.insert(
-            tk.END, "  Queue is empty — paste links on the Downloader page")
-        try:
-            self.queue_rows.itemconfig(0, foreground=pal.get("sub", "#95a5a6"))
-        except Exception:
-            pass
+        """Show the empty-state prompt without making it a selectable row."""
+        self.queue_rows.delete(0, tk.END)
+        self.queue_empty_state.place(
+            relx=0.5, rely=0.5, anchor="center")
+
+    def _queue_add_link(self):
+        """Open Downloader and focus the URL field from the empty state."""
+        self.show_frame("downloader")
+        self.url_entry.focus_set()
 
     def _update_queue_status(self):
         """Status line: "3 of 5 items • 60% • Active"."""
@@ -244,11 +271,39 @@ class QueuePageMixin:
         done = sum(1 for it in items if it.status in ("done", "failed", "skipped"))
         overall = int((done / total) * 100) if total else 0
         running = bool(self._queue_manager and self._queue_manager.is_running)
+        if total:
+            self.queue_empty_state.place_forget()
+        else:
+            self.queue_empty_state.place(
+                relx=0.5, rely=0.5, anchor="center")
         self.queue_status.configure(
-            text=f"{done}/{total} items • {overall}% • {'Active' if running else 'Idle'}")
+            text=(f"{done}/{total} items • {overall}% • "
+                  f"{'Active' if running else 'Idle'}")
+            if total else "Queue is empty • Idle")
         # Same number in the rail's right slot, so the collapsed rail still
         # reports work waiting for its turn (0 clears back to the "2" digit).
         self._set_nav_badge('queue', max(0, total - done))
+        self._update_queue_controls()
+
+    def _update_queue_controls(self):
+        """Enable queue actions only when their operation is available."""
+        items = self._queue_manager.items if self._queue_manager else []
+        selected = self.queue_rows.curselection()
+        running = bool(self._queue_manager and self._queue_manager.is_running)
+        has_pending = any(item.status == "pending" for item in items)
+        has_completed = any(
+            item.status in ("done", "failed", "skipped") for item in items)
+        states = {
+            self.btn_queue_start: "normal" if has_pending and not running else "disabled",
+            self.btn_queue_remove: "normal" if selected else "disabled",
+            self.btn_queue_select_all: (
+                "normal" if items and len(selected) < len(items) else "disabled"),
+            self.btn_queue_deselect_all: "normal" if selected else "disabled",
+            self.btn_queue_clear_done: "normal" if has_completed else "disabled",
+            self.btn_queue_cancel: "normal" if running else "disabled",
+        }
+        for button, state in states.items():
+            button.configure(state=state)
 
     def _queue_start(self):
         self._init_queue_manager()
@@ -337,5 +392,3 @@ class QueuePageMixin:
             self.show_toast(f"Retrying {reset} item(s)", "success")
         else:
             self.show_toast("No failed items to retry", "info")
-
-

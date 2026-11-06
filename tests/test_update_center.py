@@ -150,27 +150,30 @@ class SingleUpdateSurfaceTests(unittest.TestCase):
 
 
 class EngineUpdateSurfaceTests(unittest.TestCase):
-    """yt-dlp is the app's engine; its update lives on the Performance page."""
+    """App and yt-dlp updates share the Update Center."""
 
-    def test_the_engine_card_lives_on_the_performance_page(self):
-        body = _method_source("build_performance_view")
+    def test_the_engine_card_lives_on_the_update_center_page(self):
+        body = _method_source("build_updates_view")
         self.assertIn(
-            'self._settings_card(maint, "Downloader engine (yt-dlp)")', body)
+            'self._settings_card(scroll, "Downloader engine (yt-dlp)")', body)
         self.assertIn("self.ytdlp_update_btn = ctk.CTkButton(", body)
         self.assertIn("command=self.update_ytdlp_clicked", body)
         self.assertIn("self.ytdlp_ver_lbl = ctk.CTkLabel(", body)
+        self.assertIn("self.engine_auto_chk = ctk.CTkCheckBox(", body)
 
-    def test_the_update_center_page_no_longer_offers_engine_updates(self):
-        # Single surface means all updates: the engine card moved out of the
-        # Update Center page so it lives next to the other download-tuning
-        # controls on the Performance tab.
+    def test_performance_maintenance_keeps_cache_controls_only(self):
+        # Engine updates are now unified with app updates; Performance retains
+        # the unrelated cache maintenance action.
+        performance = _method_source("build_performance_view")
+        self.assertNotIn("ytdlp_update_btn", performance)
+        self.assertNotIn("ytdlp_ver_lbl", performance)
+        self.assertNotIn("engine_auto_chk", performance)
+        self.assertIn("clear_cache_btn", performance)
         body = _method_source("build_updates_view")
-        self.assertNotIn("ytdlp_update_btn", body)
-        self.assertNotIn("ytdlp_ver_lbl", body)
-        self.assertNotIn("Downloader engine (yt-dlp)", body)
-        # The check button and install button still live on Update Center.
+        # Both app and engine updates now live on Update Center.
         self.assertIn("updates_check_btn", body)
         self.assertIn("updates_install_btn", body)
+        self.assertIn("ytdlp_update_btn", body)
 
     def test_the_flows_moved_with_the_widgets(self):
         src = _source()
@@ -244,7 +247,7 @@ class EngineAutoUpdateTests(unittest.TestCase):
         self.assertIn('"engine_auto_update": True', _source())
 
     def test_the_engine_card_offers_the_toggle_and_it_persists(self):
-        body = _method_source("build_performance_view")
+        body = _method_source("build_updates_view")
         self.assertIn("Update the engine automatically at startup", body)
         self.assertIn("command=self._apply_engine_auto_pref", body)
         self.assertIn("self.engine_auto_var = tk.BooleanVar(", body)

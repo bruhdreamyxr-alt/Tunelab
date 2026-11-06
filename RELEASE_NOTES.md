@@ -1,25 +1,29 @@
-# Release Notes - v2.9.5
+# TuneLab 2.10.0
 
-## Full changelog (2.9.2 -> 2.9.5)
+## What's new
 
-### Added
-- Add-to-Queue (MP3) and (MP4) buttons; queue no longer auto-starts on add.
-- Select All / Deselect All in the queue page.
-- DownloaderPageMixin extraction (handlers moved out of ui.py).
-- README with run/test/build instructions.
+- **Find tracks as you type.** Search YouTube or SoundCloud from the Downloader
+  page and choose a result, or continue pasting links as before.
+- **More After Effects targets.** Convert projects and animation presets for
+  After Effects 2020-2026. Known project-format incompatibilities are explained
+  before conversion; relabeling a project is not a full migration of newer
+  features.
+- **Clearer queue and history.** The empty queue offers a direct path to add a
+  link, queue actions reflect current selection, and History has more readable
+  sorting and empty states.
+- **A more useful update banner.** See the installed and available versions,
+  review release notes, and understand that installing restarts TuneLab.
+- **Lighter startup work.** Downloader HTTP support is loaded only when a
+  network request is needed.
 
-### Fixed
-- MP4 queue items no longer skipped due to prior MP3 history.
-- Queue add button overlap and double-add.
-- Scrollbar hover reveal and transparent scroll-well canvas color.
-- Crimson theme hover contrast.
-- AEP target-year radio chips wrap so 2026 is visible.
-- Queue toolbar split into two rows; bottom padding increased.
-- Tooltips disabled by default for cleaner UI.
-- Engine card spacing in Performance page.
-- Inno Setup install step PowerShell syntax in release workflow.
-- Simplified Inno Setup install step in release workflow.
+## Also improved
 
-### Changed
-- Queue toolbar simplified.
-- Renamed repository to Tunelab.
+Downloader progress and status, Studio controls, theme-aware selection states,
+and several settings layouts have been polished.
+
+## Windows downloads
+
+- `mysetup*.exe` is the installer for a fresh install.
+- `UniversalAudioStudio_*_update.zip` is used by the in-app updater.
+
+Installed copies check published GitHub Releases for updates automatically.
